@@ -36,6 +36,19 @@ private slots:
     void frameOutlineFollowsShape();
 
 private:
+    // Visual children are not necessarily QObject children; walk the item tree.
+    QQuickItem *findItem(const QString &objectName) const
+    {
+        QList<QQuickItem *> pending{m_window->contentItem()};
+        while (!pending.isEmpty()) {
+            QQuickItem *item = pending.takeFirst();
+            if (item->objectName() == objectName)
+                return item;
+            pending.append(item->childItems());
+        }
+        return nullptr;
+    }
+
     QTemporaryDir m_dir;
     std::shared_ptr<ImageStore> m_store;
     std::unique_ptr<ProjectController> m_controller;
@@ -46,6 +59,7 @@ private:
 
 void TestUi::initTestCase()
 {
+    qputenv("QT_QUICK_CONTROLS_MATERIAL_VARIANT", "Dense");
     QQuickStyle::setStyle(QStringLiteral("Material"));
     QVERIFY(m_dir.isValid());
     const QString path = m_dir.filePath(QStringLiteral("portrait.png"));
@@ -247,15 +261,7 @@ void TestUi::frameOutlineFollowsShape()
     const QRectF crop = m_controller->effectiveCrop();
     QVERIFY(std::abs(crop.width() / crop.height() - 341.0 / 512.0) < 0.01);
 
-    // Visual children are not necessarily QObject children; walk the item tree.
-    QQuickItem *tabBar = nullptr;
-    QList<QQuickItem *> pending{m_window->contentItem()};
-    while (!pending.isEmpty() && !tabBar) {
-        QQuickItem *item = pending.takeFirst();
-        if (item->inherits("QQuickTabBar"))
-            tabBar = item;
-        pending.append(item->childItems());
-    }
+    QQuickItem *tabBar = findItem(QStringLiteral("viewTabs"));
     QVERIFY(tabBar);
     // Fit the whole photo inside the ellipse: the crop extends beyond the image.
     m_controller->fitWholeImage();
@@ -269,6 +275,21 @@ void TestUi::frameOutlineFollowsShape()
         QTest::qWait(300);
         if (!prefix.isEmpty())
             QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(prefix) + QString::number(tab) + u".png"));
+    }
+
+    // Selecting a parameter group switches the view: Image -> Original, Frame -> Processed.
+    QQuickItem *categories = findItem(QStringLiteral("categoryTabs"));
+    QVERIFY(categories);
+    categories->setProperty("currentIndex", 1);
+    QCOMPARE(tabBar->property("currentIndex").toInt(), 1);
+    categories->setProperty("currentIndex", 0);
+    QCOMPARE(tabBar->property("currentIndex").toInt(), 0);
+    for (int category : {0, 1, 2, 3}) {
+        categories->setProperty("currentIndex", category);
+        QTest::qWait(200);
+        if (!prefix.isEmpty())
+            QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(prefix) + u"cat" + QString::number(category)
+                                                + u".png"));
     }
 }
 

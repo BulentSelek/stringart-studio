@@ -15,6 +15,7 @@ Pane {
     required property ProjectController controller
 
     readonly property int originalTab: 0
+    readonly property int processedTab: 1
     readonly property int resultTab: 2
     readonly property int residualTab: 3
 
@@ -56,6 +57,10 @@ Pane {
         }
     }
 
+    function showView(index) {
+        tabs.currentIndex = index
+    }
+
     readonly property string imageSource: {
         switch (tabs.currentIndex) {
         case 0: return "image://studio/original/" + root.controller.originalRevision
@@ -78,6 +83,7 @@ Pane {
 
             TabBar {
                 id: tabs
+                objectName: "viewTabs"
                 Layout.fillWidth: true
                 currentIndex: 0
                 TabButton { text: qsTr("Original") }

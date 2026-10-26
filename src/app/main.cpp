@@ -11,6 +11,9 @@ Q_IMPORT_QML_PLUGIN(StringArtStudioPlugin)
 
 int main(int argc, char *argv[])
 {
+    // Compact Material controls so each parameter page fits without scrolling.
+    if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_MATERIAL_VARIANT"))
+        qputenv("QT_QUICK_CONTROLS_MATERIAL_VARIANT", "Dense");
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("String Art Studio"));
     QGuiApplication::setOrganizationName(QStringLiteral("StringArtStudio"));

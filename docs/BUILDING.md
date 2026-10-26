@@ -28,19 +28,28 @@ executable before distributing.
 ./build/src/app/stringart-studio [optional-image-path]
 ```
 
-1. Open an image (button or drag and drop), or open a saved project.
-2. Adjust tone, rotation (slider or ±90°) and the crop frame (drag / resize on
-   the *Original* tab; it may extend beyond the photo, and **Fit whole photo**
-   puts the entire photo inside the frame); check the *Processed* tab, which
-   shows the frame outline, and the histogram.
-3. Choose the frame (circle, ellipse, rectangle or a custom CSV of pin
-   positions in mm), pin count, physical size, minimum separation, working
-   size, max segments, edge emphasis, thread opacity and width.
-4. Press **Start**. The *String art* and *Residual* tabs update live; Pause /
-   Resume / Cancel are on the right. The mouse wheel zooms around the cursor,
-   drag pans, **Fit** resets, **Pins** overlays pin markers with indices.
-5. Export PNG (choose size), the winding CSV (mm or px), SVG or JSON, and save
-   the project (`.sasproj`, image embedded).
+File actions (open image, open/save project) are in the toolbar; images can
+also be dropped on the window. Parameters on the left are grouped by workflow
+step, each with secondary options under *Advanced* and an explanation on
+hover (?):
+
+1. **Image** — tone (brightness, contrast, gamma, invert, histogram),
+   rotation and crop. The crop frame is edited on the *Original* view; it may
+   extend beyond the photo, and **Fit whole photo** puts the entire photo
+   inside the frame.
+2. **Frame** — shape (circle, ellipse, rectangle or custom CSV), physical
+   size, pin count, minimum separation; *Advanced*: start pin. The
+   *Processed* view shows the frame outline.
+3. **Thread** — opacity, width (with the equivalent physical thread
+   diameter) and colours.
+4. **Run** — working size, max. segments, edge emphasis; *Advanced*: max.
+   thread length, repeated lines.
+
+Selecting *Image* or *Frame* switches the centre view to *Original* or
+*Processed*. Press **Start** on the right; the *String art* and *Residual*
+views update live, with Pause / Resume / Cancel. The mouse wheel zooms around
+the cursor, drag pans, **Fit** resets, **Pins** overlays pin markers. Export
+PNG, the winding CSV (mm or px), SVG or JSON on the right.
 
 Custom pin CSV: one pin per line, `x,y` in mm (comma, semicolon, tab or
 spaces), in perimeter order; an optional header naming `x`/`y` columns is

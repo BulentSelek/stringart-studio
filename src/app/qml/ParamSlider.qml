@@ -4,10 +4,12 @@ import QtQuick.Layouts
 
 // Labelled slider that reports user changes through `moved` so the caller
 // can write them back to the controller without breaking the value binding.
+// `help` is shown as a tooltip when hovering the label.
 ColumnLayout {
     id: root
 
     property string label
+    property string help
     property real value
     property real from: 0
     property real to: 1
@@ -22,10 +24,10 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
 
-        Label {
+        HelpLabel {
             text: root.label
+            help: root.help
             Layout.fillWidth: true
-            opacity: 0.8
         }
         Label {
             text: root.value.toFixed(root.decimals) + root.suffix

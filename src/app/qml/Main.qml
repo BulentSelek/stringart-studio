@@ -25,21 +25,58 @@ ApplicationWindow {
     Material.theme: Material.Dark
     Material.accent: Material.Amber
 
+    header: ToolBar {
+        Material.background: "#26262b"
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            enabled: !window.controller.running
+            ToolButton {
+                text: qsTr("Open image…")
+                icon.name: "document-open"
+                onClicked: openDialog.open()
+            }
+            ToolSeparator {}
+            ToolButton {
+                text: qsTr("Open project…")
+                onClicked: openProjectDialog.open()
+            }
+            ToolButton {
+                text: qsTr("Save project…")
+                onClicked: saveProjectDialog.open()
+            }
+            Item { Layout.fillWidth: true }
+            Label {
+                text: window.controller.imageName
+                opacity: 0.7
+                elide: Text.ElideMiddle
+                Layout.maximumWidth: 400
+            }
+        }
+    }
+
     RowLayout {
         anchors.fill: parent
         spacing: 0
 
         SettingsPanel {
+            id: settings
             controller: window.controller
-            Layout.preferredWidth: 330
+            Layout.preferredWidth: 340
             Layout.fillHeight: true
-            onOpenRequested: openDialog.open()
-            onOpenProjectRequested: openProjectDialog.open()
-            onSaveProjectRequested: saveProjectDialog.open()
             onImportPinsRequested: pinsDialog.open()
+            // Show the view that matches the selected parameter group.
+            onCurrentCategoryChanged: {
+                if (settings.currentCategory === settings.imageCategory)
+                    imagePanel.showView(imagePanel.originalTab)
+                else if (settings.currentCategory === settings.frameCategory)
+                    imagePanel.showView(imagePanel.processedTab)
+            }
         }
 
         ImagePanel {
+            id: imagePanel
             controller: window.controller
             Layout.fillWidth: true
             Layout.fillHeight: true

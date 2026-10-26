@@ -7,6 +7,7 @@ qt_add_qml_module(stringart_ui
     OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/qml/StringArtStudio
     QML_FILES
         qml/Main.qml
+        qml/HelpLabel.qml
         qml/ImagePanel.qml
         qml/ParamSlider.qml
         qml/ProgressPanel.qml
