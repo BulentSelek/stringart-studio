@@ -21,6 +21,7 @@
 #include <vector>
 
 class ImageStore;
+class QSettings;
 class OptimizationWorker;
 
 // UI state and commands for the QML front end. Owns the original image, the
@@ -114,6 +115,11 @@ public:
     Q_INVOKABLE void exportJson(const QUrl &url);
     Q_INVOKABLE bool saveProject(const QUrl &url);
     Q_INVOKABLE bool openProject(const QUrl &url);
+
+    // Last-used parameters (frame, pins, thread, tone, run and export
+    // options). Crop and rotation belong to an image and are not stored.
+    void saveSettings(QSettings &settings) const;
+    void restoreSettings(QSettings &settings);
 
     [[nodiscard]] int customPinCount() const { return static_cast<int>(m_customPinsMm.size()); }
     [[nodiscard]] int canvasWidth() const;

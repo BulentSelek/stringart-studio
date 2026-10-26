@@ -10,6 +10,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -36,8 +37,13 @@ private slots:
     void phase2Workflow();
     void frameOutlineFollowsShape();
     void dialogFoldersPersist();
+    void windowStatePersists();
+    void parametersPersist();
 
 private:
+    void createUi();
+    void destroyUi();
+
     // Visual children are not necessarily QObject children; walk the item tree.
     QQuickItem *findItem(const QString &objectName) const
     {
@@ -62,8 +68,11 @@ private:
 void TestUi::initTestCase()
 {
     qputenv("QT_QUICK_CONTROLS_MATERIAL_VARIANT", "Dense");
-    // Settings (dialog folders) go to a test location, not the user's config.
+    // Settings go to a temporary location, never the user's configuration.
     QStandardPaths::setTestModeEnabled(true);
+    QVERIFY(m_dir.isValid());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, m_dir.filePath(QStringLiteral("config")));
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_dir.filePath(QStringLiteral("config")));
     QCoreApplication::setOrganizationName(QStringLiteral("StringArtStudioTest"));
     QCoreApplication::setApplicationName(QStringLiteral("tst_ui"));
     QQuickStyle::setStyle(QStringLiteral("Material"));
@@ -76,6 +85,12 @@ void TestUi::initTestCase()
 void TestUi::init()
 {
     QTest::failOnWarning(QRegularExpression(QStringLiteral(".*")));
+    QSettings().clear(); // every test starts from default settings
+    createUi();
+}
+
+void TestUi::createUi()
+{
     m_store = std::make_shared<ImageStore>();
     m_controller = std::make_unique<ProjectController>(m_store);
     m_engine = std::make_unique<QQmlApplicationEngine>();
@@ -89,6 +104,11 @@ void TestUi::init()
 }
 
 void TestUi::cleanup()
+{
+    destroyUi();
+}
+
+void TestUi::destroyUi()
 {
     m_engine.reset();
     m_controller.reset();
@@ -307,14 +327,72 @@ void TestUi::dialogFoldersPersist()
     folders->setProperty("images", folder);
 
     // A new session (fresh engine and window) restores the folder.
-    cleanup();
-    init();
+    destroyUi();
+    createUi();
     folders = m_window->findChild<QObject *>(QStringLiteral("dialogFolders"));
     QVERIFY(folders);
     QCOMPARE(folders->property("images").toUrl(), folder);
     QObject *dialog = m_window->findChild<QObject *>(QStringLiteral("openImageDialog"));
     QVERIFY(dialog);
     QCOMPARE(dialog->property("currentFolder").toUrl(), folder);
+}
+
+void TestUi::windowStatePersists()
+{
+    m_window->setWidth(1300);
+    m_window->setHeight(780);
+    findItem(QStringLiteral("categoryTabs"))->setProperty("currentIndex", 2);
+
+    destroyUi();
+    createUi();
+    QCOMPARE(m_window->width(), 1300);
+    QCOMPARE(m_window->height(), 780);
+    QCOMPARE(findItem(QStringLiteral("categoryTabs"))->property("currentIndex").toInt(), 2);
+}
+
+void TestUi::parametersPersist()
+{
+    QVERIFY(m_controller->loadImage(m_portrait));
+    m_controller->setProperty("frameShape", ProjectController::Rectangle);
+    m_controller->setProperty("frameWidthMm", 700.0);
+    m_controller->setProperty("frameHeightMm", 450.0);
+    m_controller->setProperty("pinCount", 321);
+    m_controller->setProperty("opacity", 0.33);
+    m_controller->setProperty("contrast", 1.4);
+    m_controller->setProperty("edgeEmphasis", 2.0);
+    m_controller->setProperty("workingSize", 768);
+    m_controller->setProperty("exportSize", 4096);
+    m_controller->setProperty("threadColor", QColor(0x1a, 0x23, 0x40));
+    m_controller->setProperty("rotation", 33.0);
+    {
+        QSettings settings;
+        m_controller->saveSettings(settings);
+    }
+
+    ProjectController restored(m_store);
+    {
+        QSettings settings;
+        restored.restoreSettings(settings);
+    }
+    QCOMPARE(restored.property("frameShape").toInt(), int(ProjectController::Rectangle));
+    QCOMPARE(restored.property("frameWidthMm").toDouble(), 700.0);
+    QCOMPARE(restored.property("frameHeightMm").toDouble(), 450.0);
+    QCOMPARE(restored.property("pinCount").toInt(), 321);
+    QVERIFY(std::abs(restored.property("opacity").toDouble() - 0.33) < 1e-6);
+    QCOMPARE(restored.property("contrast").toDouble(), 1.4);
+    QCOMPARE(restored.property("edgeEmphasis").toDouble(), 2.0);
+    QCOMPARE(restored.property("workingSize").toInt(), 768);
+    QCOMPARE(restored.property("exportSize").toInt(), 4096);
+    QCOMPARE(restored.property("threadColor").value<QColor>(), QColor(0x1a, 0x23, 0x40));
+    QCOMPARE(restored.property("rotation").toDouble(), 0.0); // image-specific, not stored
+    QVERIFY(!restored.hasImage());
+
+    // Corrupt settings are ignored.
+    QSettings().setValue(QStringLiteral("Parameters/project"), QByteArray("{broken"));
+    ProjectController fallback(m_store);
+    QSettings settings;
+    fallback.restoreSettings(settings);
+    QCOMPARE(fallback.property("pinCount").toInt(), 240);
 }
 
 QTEST_MAIN(TestUi)

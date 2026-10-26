@@ -26,6 +26,36 @@ ApplicationWindow {
     Material.theme: Material.Dark
     Material.accent: Material.Amber
 
+    // Window geometry and the selected parameter page, kept across sessions.
+    Settings {
+        id: windowState
+        objectName: "windowState"
+        category: "Window"
+        property alias x: window.x
+        property alias y: window.y
+        property alias width: window.width
+        property alias height: window.height
+        property bool maximized: false
+        property alias parameterPage: settings.currentCategory
+    }
+
+    Component.onCompleted: {
+        // Ignore a stored position that is off every screen (e.g. a monitor
+        // was disconnected); the window manager then places the window.
+        const onScreen = window.x + 100 > 0 && window.x < Screen.desktopAvailableWidth - 100
+                         && window.y >= 0 && window.y < Screen.desktopAvailableHeight - 100
+        if (!onScreen) {
+            window.x = (Screen.desktopAvailableWidth - window.width) / 2
+            window.y = (Screen.desktopAvailableHeight - window.height) / 2
+        }
+        if (windowState.maximized)
+            window.showMaximized()
+    }
+    onVisibilityChanged: visibility => {
+        if (visibility === Window.Maximized || visibility === Window.Windowed)
+            windowState.maximized = visibility === Window.Maximized
+    }
+
     // Last folder per kind of file, kept across sessions.
     Settings {
         id: folders

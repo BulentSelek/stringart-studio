@@ -5,6 +5,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
+#include <QSettings>
 #include <QtQml/QQmlExtensionPlugin>
 
 Q_IMPORT_QML_PLUGIN(StringArtStudioPlugin)
@@ -23,6 +24,14 @@ int main(int argc, char *argv[])
     // last) and the image provider owned by the engine.
     auto store = std::make_shared<ImageStore>();
     ProjectController controller(store);
+    {
+        QSettings settings;
+        controller.restoreSettings(settings);
+    }
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &controller, [&controller] {
+        QSettings settings;
+        controller.saveSettings(settings);
+    });
 
     QQmlApplicationEngine engine;
     engine.addImageProvider(QStringLiteral("studio"), new StudioImageProvider(store));

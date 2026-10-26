@@ -11,6 +11,7 @@
 #include <QFileInfo>
 #include <QFuture>
 #include <QImageReader>
+#include <QSettings>
 #include <QtConcurrent/QtConcurrentRun>
 
 #include <exception>
@@ -630,6 +631,43 @@ bool ProjectController::openProject(const QUrl &url)
     }
     setStatus(tr("Opened %1.").arg(QFileInfo(path).fileName()) + imageNote);
     return true;
+}
+
+// ---------------------------------------------------------------- settings
+
+void ProjectController::saveSettings(QSettings &settings) const
+{
+    // Reuses the validated project format for the parameters.
+    sa::ProjectData parameters = currentSettings();
+    parameters.imagePath.clear();
+    parameters.imageData.clear();
+    parameters.crop = QRectF();
+    parameters.rotationDegrees = 0.0;
+    settings.beginGroup(QStringLiteral("Parameters"));
+    settings.setValue(QStringLiteral("project"), sa::ProjectFile::toJson(parameters, false, false));
+    settings.setValue(QStringLiteral("exportSize"), m_exportSize);
+    settings.setValue(QStringLiteral("csvMillimeters"), m_csvMillimeters);
+    settings.endGroup();
+}
+
+void ProjectController::restoreSettings(QSettings &settings)
+{
+    settings.beginGroup(QStringLiteral("Parameters"));
+    const QByteArray json = settings.value(QStringLiteral("project")).toByteArray();
+    m_exportSize = settings.value(QStringLiteral("exportSize"), m_exportSize).toInt();
+    m_csvMillimeters = settings.value(QStringLiteral("csvMillimeters"), m_csvMillimeters).toBool();
+    settings.endGroup();
+    emit settingsChanged();
+    if (json.isEmpty())
+        return;
+    try {
+        sa::ProjectData parameters = sa::ProjectFile::fromJson(json);
+        parameters.crop = m_crop;
+        parameters.rotationDegrees = m_rotation;
+        applySettings(parameters);
+    } catch (const std::exception &) {
+        // Stale or corrupt settings: keep the defaults.
+    }
 }
 
 // ------------------------------------------------------------------- state
