@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
@@ -24,6 +25,22 @@ ApplicationWindow {
 
     Material.theme: Material.Dark
     Material.accent: Material.Amber
+
+    // Last folder per kind of file, kept across sessions.
+    Settings {
+        id: folders
+        objectName: "dialogFolders"
+        category: "FileDialogs"
+        property url images: StandardPaths.writableLocation(StandardPaths.PicturesLocation)
+        property url projects: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+        property url pins: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+        property url exports: StandardPaths.writableLocation(StandardPaths.PicturesLocation)
+    }
+
+    function folderOf(fileUrl: url): url {
+        const path = fileUrl.toString()
+        return path.substring(0, path.lastIndexOf("/"))
+    }
 
     header: ToolBar {
         Material.background: "#26262b"
@@ -99,7 +116,8 @@ ApplicationWindow {
         keys: ["text/uri-list"]
         onDropped: drop => {
             if (drop.hasUrls && drop.urls.length > 0) {
-                window.controller.loadImage(drop.urls[0])
+                if (window.controller.loadImage(drop.urls[0]))
+                    folders.images = window.folderOf(drop.urls[0])
                 drop.acceptProposedAction()
             }
         }
@@ -121,67 +139,100 @@ ApplicationWindow {
 
     FileDialog {
         id: openDialog
+        objectName: "openImageDialog"
+        currentFolder: folders.images
         title: qsTr("Open image")
         nameFilters: [qsTr("Images (*.png *.jpg *.jpeg *.bmp *.webp)"), qsTr("All files (*)")]
-        onAccepted: window.controller.loadImage(selectedFile)
+        onAccepted: {
+            folders.images = window.folderOf(selectedFile)
+            window.controller.loadImage(selectedFile)
+        }
     }
 
     FileDialog {
         id: openProjectDialog
+        currentFolder: folders.projects
         title: qsTr("Open project")
         nameFilters: [qsTr("String Art Studio project (*.sasproj)"), qsTr("JSON (*.json)"), qsTr("All files (*)")]
-        onAccepted: window.controller.openProject(selectedFile)
+        onAccepted: {
+            folders.projects = window.folderOf(selectedFile)
+            window.controller.openProject(selectedFile)
+        }
     }
 
     FileDialog {
         id: saveProjectDialog
+        currentFolder: folders.projects
         title: qsTr("Save project")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "sasproj"
         nameFilters: [qsTr("String Art Studio project (*.sasproj)")]
-        onAccepted: window.controller.saveProject(selectedFile)
+        onAccepted: {
+            folders.projects = window.folderOf(selectedFile)
+            window.controller.saveProject(selectedFile)
+        }
     }
 
     FileDialog {
         id: pinsDialog
+        currentFolder: folders.pins
         title: qsTr("Import pin positions (x, y in mm)")
         nameFilters: [qsTr("CSV (*.csv *.txt)"), qsTr("All files (*)")]
-        onAccepted: window.controller.importPins(selectedFile)
+        onAccepted: {
+            folders.pins = window.folderOf(selectedFile)
+            window.controller.importPins(selectedFile)
+        }
     }
 
     FileDialog {
         id: svgDialog
+        currentFolder: folders.exports
         title: qsTr("Export SVG")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "svg"
         nameFilters: [qsTr("SVG image (*.svg)")]
-        onAccepted: window.controller.exportSvg(selectedFile)
+        onAccepted: {
+            folders.exports = window.folderOf(selectedFile)
+            window.controller.exportSvg(selectedFile)
+        }
     }
 
     FileDialog {
         id: jsonDialog
+        currentFolder: folders.exports
         title: qsTr("Export JSON")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "json"
         nameFilters: [qsTr("JSON (*.json)")]
-        onAccepted: window.controller.exportJson(selectedFile)
+        onAccepted: {
+            folders.exports = window.folderOf(selectedFile)
+            window.controller.exportJson(selectedFile)
+        }
     }
 
     FileDialog {
         id: pngDialog
+        currentFolder: folders.exports
         title: qsTr("Export PNG")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "png"
         nameFilters: [qsTr("PNG image (*.png)")]
-        onAccepted: window.controller.exportPng(selectedFile)
+        onAccepted: {
+            folders.exports = window.folderOf(selectedFile)
+            window.controller.exportPng(selectedFile)
+        }
     }
 
     FileDialog {
         id: csvDialog
+        currentFolder: folders.exports
         title: qsTr("Export winding sequence")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "csv"
         nameFilters: [qsTr("CSV file (*.csv)")]
-        onAccepted: window.controller.exportCsv(selectedFile)
+        onAccepted: {
+            folders.exports = window.folderOf(selectedFile)
+            window.controller.exportCsv(selectedFile)
+        }
     }
 }

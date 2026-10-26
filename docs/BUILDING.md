@@ -29,7 +29,9 @@ executable before distributing.
 ```
 
 File actions (open image, open/save project) are in the toolbar; images can
-also be dropped on the window. Parameters on the left are grouped by workflow
+also be dropped on the window. File dialogs reopen in the last folder used
+for images, projects, pin CSVs and exports respectively (stored in the user
+settings, e.g. `~/.config/StringArtStudio/String Art Studio.conf` on Linux). Parameters on the left are grouped by workflow
 step, each with secondary options under *Advanced* and an explanation on
 hover (?):
 

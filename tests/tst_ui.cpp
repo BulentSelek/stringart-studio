@@ -11,6 +11,7 @@
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QSignalSpy>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -34,6 +35,7 @@ private slots:
     void pauseResumeCancel();
     void phase2Workflow();
     void frameOutlineFollowsShape();
+    void dialogFoldersPersist();
 
 private:
     // Visual children are not necessarily QObject children; walk the item tree.
@@ -60,6 +62,10 @@ private:
 void TestUi::initTestCase()
 {
     qputenv("QT_QUICK_CONTROLS_MATERIAL_VARIANT", "Dense");
+    // Settings (dialog folders) go to a test location, not the user's config.
+    QStandardPaths::setTestModeEnabled(true);
+    QCoreApplication::setOrganizationName(QStringLiteral("StringArtStudioTest"));
+    QCoreApplication::setApplicationName(QStringLiteral("tst_ui"));
     QQuickStyle::setStyle(QStringLiteral("Material"));
     QVERIFY(m_dir.isValid());
     const QString path = m_dir.filePath(QStringLiteral("portrait.png"));
@@ -291,6 +297,24 @@ void TestUi::frameOutlineFollowsShape()
             QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(prefix) + u"cat" + QString::number(category)
                                                 + u".png"));
     }
+}
+
+void TestUi::dialogFoldersPersist()
+{
+    QObject *folders = m_window->findChild<QObject *>(QStringLiteral("dialogFolders"));
+    QVERIFY(folders);
+    const QUrl folder = QUrl::fromLocalFile(m_dir.path());
+    folders->setProperty("images", folder);
+
+    // A new session (fresh engine and window) restores the folder.
+    cleanup();
+    init();
+    folders = m_window->findChild<QObject *>(QStringLiteral("dialogFolders"));
+    QVERIFY(folders);
+    QCOMPARE(folders->property("images").toUrl(), folder);
+    QObject *dialog = m_window->findChild<QObject *>(QStringLiteral("openImageDialog"));
+    QVERIFY(dialog);
+    QCOMPARE(dialog->property("currentFolder").toUrl(), folder);
 }
 
 QTEST_MAIN(TestUi)
