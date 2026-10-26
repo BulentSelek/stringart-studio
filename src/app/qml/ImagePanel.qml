@@ -21,6 +21,41 @@ Pane {
     padding: 0
     Material.background: "#1b1b1f"
 
+    // Frame outline through the pins (normalized canvas coordinates), with
+    // the unreachable area outside the frame dimmed.
+    component FrameOutline: Canvas {
+        id: outline
+        property var positions
+        property real dim: 0.55
+        onPositionsChanged: requestPaint()
+        onWidthChanged: requestPaint()
+        onHeightChanged: requestPaint()
+        onVisibleChanged: if (visible) requestPaint()
+        onPaint: {
+            const ctx = getContext("2d")
+            ctx.reset()
+            if (!positions || positions.length < 3)
+                return
+            ctx.beginPath()
+            ctx.rect(0, 0, width, height)
+            ctx.moveTo(positions[0].x * width, positions[0].y * height)
+            for (let i = 1; i < positions.length; ++i)
+                ctx.lineTo(positions[i].x * width, positions[i].y * height)
+            ctx.closePath()
+            ctx.fillRule = Qt.OddEvenFill
+            ctx.fillStyle = Qt.rgba(0, 0, 0, outline.dim)
+            ctx.fill()
+            ctx.beginPath()
+            ctx.moveTo(positions[0].x * width, positions[0].y * height)
+            for (let i = 1; i < positions.length; ++i)
+                ctx.lineTo(positions[i].x * width, positions[i].y * height)
+            ctx.closePath()
+            ctx.lineWidth = 2
+            ctx.strokeStyle = "#ffc107"
+            ctx.stroke()
+        }
+    }
+
     readonly property string imageSource: {
         switch (tabs.currentIndex) {
         case 0: return "image://studio/original/" + root.controller.originalRevision
@@ -119,6 +154,12 @@ Pane {
                         fillMode: Image.Stretch
                         retainWhileLoading: true
 
+                        FrameOutline {
+                            anchors.fill: parent
+                            visible: tabs.currentIndex === 1 && root.controller.hasImage
+                            positions: root.controller.pinPositions
+                        }
+
                         Canvas {
                             id: pins
                             anchors.fill: parent
@@ -151,7 +192,9 @@ Pane {
                             }
                         }
 
-                        // Crop frame on the original image, aspect locked to the canvas.
+                        // Crop frame on the original image. The corner handle keeps the
+                        // canvas aspect; for ellipse and rectangle frames the edge
+                        // handles change it and update the frame height to match.
                         Item {
                             id: cropFrame
                             anchors.fill: parent
@@ -159,6 +202,10 @@ Pane {
                                      && image.status === Image.Ready
                             enabled: !root.controller.running
                             readonly property bool active: moveArea.pressed || resizeArea.pressed
+                                                           || rightArea.pressed || bottomArea.pressed
+                            readonly property bool freeAspect:
+                                root.controller.frameShape === ProjectController.Ellipse
+                                || root.controller.frameShape === ProjectController.Rectangle
                             // Normalized width / height ratio of a crop with the canvas aspect.
                             readonly property real normalizedAspect: image.implicitHeight > 0
                                 ? (root.controller.canvasWidth / root.controller.canvasHeight)
@@ -166,6 +213,13 @@ Pane {
                             property rect crop: root.controller.effectiveCrop
 
                             function commit() {
+                                if (freeAspect) {
+                                    // Frame aspect follows the crop's pixel aspect (width kept).
+                                    const pixelAspect = (crop.width * image.implicitWidth)
+                                                      / (crop.height * image.implicitHeight)
+                                    const heightMm = root.controller.frameWidthMm / pixelAspect
+                                    root.controller.frameHeightMm = Math.max(50, Math.min(5000, Math.round(heightMm)))
+                                }
                                 root.controller.crop = crop
                                 crop = Qt.binding(() => root.controller.effectiveCrop)
                             }
@@ -180,12 +234,10 @@ Pane {
                                 border.color: Material.accent
                                 border.width: 2
 
-                                Rectangle {
+                                FrameOutline {
                                     anchors.fill: parent
-                                    anchors.margins: 2
-                                    color: "transparent"
-                                    border.color: "#80000000"
-                                    border.width: 1
+                                    positions: root.controller.pinPositions
+                                    dim: 0.35
                                 }
 
                                 MouseArea {
@@ -229,6 +281,54 @@ Pane {
                                             let w = Math.max(0.05, p.x / cropFrame.width - c.x)
                                             w = Math.min(w, 1 - c.x, (1 - c.y) * a)
                                             cropFrame.crop = Qt.rect(c.x, c.y, w, w / a)
+                                        }
+                                        onReleased: cropFrame.commit()
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: cropFrame.freeAspect
+                                    width: 10
+                                    height: Math.min(48, parent.height / 3)
+                                    radius: 3
+                                    color: Material.accent
+                                    anchors.horizontalCenter: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+
+                                    MouseArea {
+                                        id: rightArea
+                                        anchors.fill: parent
+                                        anchors.margins: -6
+                                        cursorShape: Qt.SizeHorCursor
+                                        onPositionChanged: mouse => {
+                                            const p = mapToItem(cropFrame, mouse.x, mouse.y)
+                                            const c = cropFrame.crop
+                                            const w = Math.max(0.05, Math.min(1 - c.x, p.x / cropFrame.width - c.x))
+                                            cropFrame.crop = Qt.rect(c.x, c.y, w, c.height)
+                                        }
+                                        onReleased: cropFrame.commit()
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: cropFrame.freeAspect
+                                    width: Math.min(48, parent.width / 3)
+                                    height: 10
+                                    radius: 3
+                                    color: Material.accent
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.verticalCenter: parent.bottom
+
+                                    MouseArea {
+                                        id: bottomArea
+                                        anchors.fill: parent
+                                        anchors.margins: -6
+                                        cursorShape: Qt.SizeVerCursor
+                                        onPositionChanged: mouse => {
+                                            const p = mapToItem(cropFrame, mouse.x, mouse.y)
+                                            const c = cropFrame.crop
+                                            const h = Math.max(0.05, Math.min(1 - c.y, p.y / cropFrame.height - c.y))
+                                            cropFrame.crop = Qt.rect(c.x, c.y, c.width, h)
                                         }
                                         onReleased: cropFrame.commit()
                                     }

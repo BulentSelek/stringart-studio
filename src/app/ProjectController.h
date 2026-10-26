@@ -177,7 +177,7 @@ private:
     FrameShape m_frameShape = Circle;
     int m_pinCount = 240;
     double m_frameWidthMm = 500.0;
-    double m_frameHeightMm = 500.0;
+    double m_frameHeightMm = 400.0; // used by ellipse/rectangle; circle uses the width
     int m_workingSize = 512;
     std::vector<sa::Vec2> m_customPinsMm;
 

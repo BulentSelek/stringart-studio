@@ -160,7 +160,7 @@ Pane {
                         onClicked: root.controller.resetCrop()
                     }
                 }
-                Hint { text: qsTr("Drag or resize the crop frame on the Original tab.") }
+                Hint { text: qsTr("Drag or resize the crop frame on the Original tab. For ellipse and rectangle frames the side handles change the frame aspect.") }
 
                 Canvas {
                     id: histogram
@@ -263,6 +263,11 @@ Pane {
                     value: root.controller.startPin
                     enabled: !root.controller.running
                     onModified: v => root.controller.startPin = v
+                }
+                Hint {
+                    visible: root.controller.frameShape === ProjectController.Ellipse
+                             || root.controller.frameShape === ProjectController.Rectangle
+                    text: qsTr("Width and height set the frame aspect.")
                 }
                 Hint {
                     text: qsTr("Canvas %1 × %2 px · %3 mm per px")

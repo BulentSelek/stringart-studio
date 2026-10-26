@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
+#include <QQuickItem>
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QSignalSpy>
@@ -32,6 +33,7 @@ private slots:
     void fullWorkflow();
     void pauseResumeCancel();
     void phase2Workflow();
+    void frameOutlineFollowsShape();
 
 private:
     QTemporaryDir m_dir;
@@ -230,6 +232,38 @@ void TestUi::phase2Workflow()
     const QByteArray shot = qgetenv("STRINGART_UI_SCREENSHOT2");
     if (!shot.isEmpty())
         QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(shot)));
+}
+
+void TestUi::frameOutlineFollowsShape()
+{
+    QVERIFY(m_controller->loadImage(m_portrait));
+    m_controller->setProperty("frameShape", ProjectController::Ellipse);
+    m_controller->setProperty("frameWidthMm", 400.0);
+    m_controller->setProperty("frameHeightMm", 600.0);
+    QCOMPARE(m_controller->canvasWidth(), 341);
+    QCOMPARE(m_controller->canvasHeight(), 512);
+    QTRY_COMPARE(m_store->get(QStringLiteral("processed")).size(), QSize(341, 512));
+    // The crop follows the new frame aspect (portrait-oriented on a square photo).
+    const QRectF crop = m_controller->effectiveCrop();
+    QVERIFY(std::abs(crop.width() / crop.height() - 341.0 / 512.0) < 0.01);
+
+    // Visual children are not necessarily QObject children; walk the item tree.
+    QQuickItem *tabBar = nullptr;
+    QList<QQuickItem *> pending{m_window->contentItem()};
+    while (!pending.isEmpty() && !tabBar) {
+        QQuickItem *item = pending.takeFirst();
+        if (item->inherits("QQuickTabBar"))
+            tabBar = item;
+        pending.append(item->childItems());
+    }
+    QVERIFY(tabBar);
+    const QByteArray prefix = qgetenv("STRINGART_UI_SHAPES");
+    for (int tab : {0, 1}) {
+        tabBar->setProperty("currentIndex", tab);
+        QTest::qWait(300);
+        if (!prefix.isEmpty())
+            QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(prefix) + QString::number(tab) + u".png"));
+    }
 }
 
 QTEST_MAIN(TestUi)
