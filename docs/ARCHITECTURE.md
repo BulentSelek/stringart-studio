@@ -1,0 +1,180 @@
+# Architecture and Models
+
+Status: Phase 1 (functional MVP). This document describes what is implemented,
+the mathematical models, and the design decisions taken where the
+specification left room for choice.
+
+## Modules
+
+```text
+src/
+├── core/                  stringart_core (static lib: Qt Core, Gui, Concurrent; no Qt Quick)
+│   ├── GrayImage.h            float image buffer
+│   ├── ImageProcessor.*       non-destructive preprocessing pipeline
+│   ├── PinGeometry.*          circular pin layout, physical scale
+│   ├── LineRasterizer.*       anti-aliased, ink-conserving line coverage
+│   ├── LineCache.*            precomputed line coverage under a memory budget
+│   ├── Compositing.*          thread compositing model + sRGB transfer
+│   ├── ThreadRenderer.*       CPU renderer (preview and high-resolution export)
+│   ├── OptimizationConfig.*   parameters + validation
+│   ├── OptimizationProblem.*  target, weights, pins; objective definition
+│   ├── StringArtResult.*      result, progress snapshot, stop reasons
+│   └── ExportManager.*        PNG and CSV export
+├── algorithms/
+│   ├── IOptimizer.h           common optimizer interface
+│   └── GreedyOptimizer.*      Algorithm A
+├── app/                   stringart_ui (QML module "StringArtStudio") + stringart-studio
+│   ├── ProjectController.*    UI state and commands exposed to QML
+│   ├── OptimizationWorker.*   std::jthread worker, pause/resume/cancel, throttled previews
+│   ├── ImageStore.*           thread-safe image slots + QQuickImageProvider
+│   ├── main.cpp
+│   └── qml/                   Main, SettingsPanel, ImagePanel, ProgressPanel, ParamSlider
+└── cli/main.cpp           stringart-cli
+tests/                     Qt Test suites (core + end-to-end UI)
+benchmarks/                stringart-benchmark + run_benchmarks.sh
+examples/                  deterministic synthetic test images
+```
+
+Dependency direction: `app -> algorithms/core`, `cli -> algorithms/core`.
+Nothing in `core` or `algorithms` includes Qt Quick or QML headers.
+
+## Coordinate system
+
+Working-image continuous pixel coordinates: pixel `(x, y)` covers
+`[x, x+1) x [y, y+1)`, y points down. Circular pins lie on the largest circle
+that fits the canvas with a one-pixel margin; pin 0 is at the top and indices
+increase clockwise. `PinLayout::mmPerUnit()` maps working units to millimetres
+from the physical frame diameter (pin circle diameter).
+
+## Preprocessing pipeline
+
+`original QImage` (never modified)
+→ `prepareBase`: crop (default: centred, output aspect), resample (Qt smooth
+scaling), gray = Rec. 709 luminance computed in linear light, re-encoded to sRGB
+→ `applyTone`: invert, contrast around 0.5, brightness offset, gamma `v^(1/γ)`
+→ display-encoded working image `g` in [0, 1].
+
+The controller caches the base image and only re-runs `applyTone` when tone
+sliders move.
+
+## Compositing model (shared by optimizer and renderer)
+
+Each pixel stores a linear-light transmittance `T` (fraction of background
+light still visible), initially 1. A segment covering fraction `c` of a pixel
+with opacity `a` gives
+
+```
+T' = T · (1 − a·c)
+```
+
+Equivalently the optical density `D = −ln T` is additive over threads
+(Beer–Lambert view of stacked semi-transparent layers). Overlaps darken
+progressively and never go below zero. Final colour is a linear-light blend
+`C = thread + (background − thread) · T`, encoded to sRGB.
+
+Physical assumptions: threads are independent absorbing layers; scattering,
+thread shadows, sheen and thread tension are ignored. `a` combines thread
+darkness and how much of a working pixel a single thread covers, so it should
+be tuned together with the working resolution (e.g. a 0.5 mm thread on a
+500 mm frame at 512 px covers ~0.5 of a pixel).
+
+The optimizer and renderer call the same `applyThread` and the same
+rasterizer, so rendering the result sequence at scale 1 reproduces the
+optimizer's buffer bit for bit (tested).
+
+## Line rasterization
+
+The thread is a band of width `w` pixels. The segment is walked along its
+major axis one column at a time; at the column centre the band spans a
+minor-axis interval of length `w / cos θ`, and each pixel's coverage is the
+exact overlap of that interval with the pixel (capped at 1). Every column
+receives exactly `w / cos θ`, so total ink is `w · length` independent of
+angle and sub-pixel phase. (A first version point-sampled a distance profile
+and was off by ±11 % at 45°; the coverage-integral test caught it.)
+
+Endpoints are always passed in pin-index order so `(i, j)` and `(j, i)`
+produce identical samples.
+
+## Objective
+
+```
+E(T) = Σ_p w_p · (enc(T_p) − g_p)² / Σ_p w_p
+```
+
+`enc` is the sRGB transfer function (table-driven, `SrgbEncoder`), `g` the
+display-encoded target and `w` per-pixel weights (1 inside the pin circle, 0
+outside — no thread can reach the outside).
+
+Decision: compositing is physical (linear light), but the error is measured in
+display-encoded space. Measuring in linear light was implemented first; it
+under-weights dark regions (a mid-gray in sRGB is 0.21 in linear light) and
+produced flat portraits whose hair and eyes were barely darker than the skin.
+The encoded objective gave clearly better contrast on the same input.
+
+## Algorithm A — greedy residual optimization (implemented)
+
+State: `T`, its encoding `E = enc(T)` (kept in sync to save one table lookup
+per sample), the current pin, and the set of used pin pairs.
+
+Each iteration:
+
+1. Candidates: pins `j` with perimeter separation ≥ `minPinSeparation` from the
+   current pin and, unless repeats are allowed, an unused pair.
+2. Score each candidate exactly, touching only its pixels:
+   `ΔS = Σ_{p∈line} w_p [(enc(T_p(1 − a c_p)) − g_p)² − (E_p − g_p)²]`
+   (factored as a difference of squares to avoid cancellation).
+3. Pick the most negative `ΔS`; ties break on the lowest pin index.
+4. Update `T` and `E` along the line, append the pin, accumulate length.
+5. Stop on: max segments, max thread length (the next best segment would
+   exceed it), no valid candidate, best `ΔS > −minImprovement`, or
+   cancellation.
+
+Complexity per iteration: `O(P · L)` with `P` valid candidates (≤ pin count)
+and `L` covered pixels per line (≈ length · (w + 1)). Memory: `O(W·H)` plus the
+optional line cache (8 bytes per covered pixel sample over all valid pairs).
+
+Parallelism: candidates are split into contiguous chunks scored on a
+`QThreadPool`; each candidate's score is computed sequentially and the
+reduction is deterministic, so results are identical for any thread count and
+for cached vs on-demand rasterization (tested).
+
+Validation: tests compare the incremental `ΔS` against a full re-render +
+full error evaluation for every candidate, and compare a complete run against
+a brute-force reference optimizer that re-evaluates the whole image per
+candidate.
+
+The output is always a single continuous thread: segment `i` joins
+`sequence[i]` and `sequence[i+1]`.
+
+## Algorithms B and C
+
+Not implemented (Phase 4). `IOptimizer` is the extension point. When added,
+the UI must label least-squares line weights as *virtual reconstruction*
+quality, distinct from the manufacturable single-thread sequence.
+
+## Threading and UI
+
+- `OptimizationWorker` runs the optimizer on a `std::jthread`. The progress
+  callback publishes a preview at most every 120 ms: it converts `T` to a
+  `QImage` (working resolution) on the worker thread and stores it in
+  `ImageStore`; the GUI thread only receives a `progressed()` signal and
+  reads a small snapshot struct.
+- Pause blocks inside the progress callback on a
+  `std::condition_variable_any` with the run's `stop_token`, so cancel also
+  wakes a paused run. A cancelled run keeps its partial result.
+- QML displays images via `image://studio/<slot>/<revision>`; the revision
+  only busts QML's cache. No pixel buffers cross into QML properties.
+- PNG export renders on `QtConcurrent::run` and reports back with
+  `QFuture::then(this, …)`.
+- `ProjectController` is created in C++ and passed to `Main.qml` as a
+  required property; the `ImageStore` is shared via `std::shared_ptr` so
+  destruction order between engine and controller is safe.
+
+## Export formats (Phase 1)
+
+- PNG: re-rendered at the requested size (pin coordinates and thread width
+  scaled; opacity unchanged, so a box-downsampled export approximates the
+  working preview — tested).
+- CSV: `segment,from_pin,to_pin,from_x,from_y,to_x,to_y,length,cumulative_length`
+  with `_mm` or `_px` suffixes. Pins are 0-based, pin 0 at the top, clockwise;
+  coordinates are relative to the canvas top-left corner, y down.
