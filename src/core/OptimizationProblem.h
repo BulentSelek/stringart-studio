@@ -28,8 +28,15 @@ struct OptimizationProblem
     PinLayout pins;
 
     // Builds the problem from a display-encoded working image. Pixels outside
-    // the pin circle get weight 0 because no thread can reach them.
-    static OptimizationProblem fromImage(const GrayImage &encoded, const PinLayout &pins);
+    // the convex hull of the pins get weight 0 because no thread reaches them.
+    // edgeEmphasis k >= 0 sets w_p = 1 + k * e_p inside the hull, where e_p in
+    // [0, 1] is the normalized edge strength (edgeStrength). k = 0 gives the
+    // plain MSE; larger k spends more thread on contours and features.
+    static OptimizationProblem fromImage(const GrayImage &encoded, const PinLayout &pins, double edgeEmphasis = 0.0);
+
+    // Sobel gradient magnitude, 3x3 box-blurred, divided by its 99th
+    // percentile and clamped to [0, 1].
+    static std::vector<float> edgeStrength(const GrayImage &encoded);
 
     // Throws std::invalid_argument if buffers and pin canvas disagree.
     void validate() const;

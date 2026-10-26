@@ -29,6 +29,11 @@ private slots:
     void opacityAccumulation();
     void zeroOpacityRendersBlank();
     void srgbRoundTrip();
+    void ellipticalPins();
+    void rectangularPins();
+    void customPins();
+    void canvasSizeFollowsAspect();
+    void reachableMask();
 };
 
 void TestGeometry::circularPins()
@@ -217,6 +222,122 @@ void TestGeometry::srgbRoundTrip()
     }
     QCOMPARE(SrgbEncoder::encode(1.0f), linearToSrgb(1.0f));
     QCOMPARE(SrgbEncoder::encode(0.0f), 0.0f);
+}
+
+void TestGeometry::ellipticalPins()
+{
+    const PinLayout layout = PinLayout::elliptical(120, 402, 202, 800.0, 400.0);
+    QCOMPARE(layout.pinCount(), 120);
+    QCOMPARE(layout.kind(), PinLayoutKind::Elliptical);
+    const double rx = 200.0;
+    const double ry = 100.0;
+    for (const Vec2 &p : layout.pins()) {
+        const double u = (p.x - 201.0) / rx;
+        const double v = (p.y - 101.0) / ry;
+        QVERIFY(std::abs(u * u + v * v - 1.0) < 1e-6);
+    }
+    QVERIFY(std::abs(layout.pin(0).x - 201.0) < 1e-6);
+    QVERIFY(std::abs(layout.pin(0).y - 1.0) < 1e-6);
+    // Even spacing along the arc: neighbouring chords differ by < 1 %.
+    double minChord = 1e9;
+    double maxChord = 0.0;
+    for (int i = 0; i < 120; ++i) {
+        const double d = layout.distance(i, (i + 1) % 120);
+        minChord = std::min(minChord, d);
+        maxChord = std::max(maxChord, d);
+    }
+    QVERIFY2(maxChord / minChord < 1.01, qPrintable(QStringLiteral("%1 %2").arg(minChord).arg(maxChord)));
+    QVERIFY(std::abs(layout.mmPerUnit() - 2.0) < 1e-9);
+}
+
+void TestGeometry::rectangularPins()
+{
+    // Inset rectangle 100 x 50 units, perimeter 300, 30 pins -> 10 units apart.
+    const PinLayout layout = PinLayout::rectangular(30, 102, 52, 1000.0, 500.0);
+    QCOMPARE(layout.pinCount(), 30);
+    QCOMPARE(layout.pin(0), (Vec2{1.0, 1.0}));   // top-left corner
+    QCOMPARE(layout.pin(10), (Vec2{101.0, 1.0})); // top-right corner
+    QCOMPARE(layout.pin(15), (Vec2{101.0, 51.0}));
+    QCOMPARE(layout.pin(25), (Vec2{1.0, 51.0}));
+    QCOMPARE(layout.pin(29), (Vec2{1.0, 11.0}));
+    for (const Vec2 &p : layout.pins()) {
+        const bool onEdge = p.x == 1.0 || p.x == 101.0 || p.y == 1.0 || p.y == 51.0;
+        QVERIFY(onEdge);
+    }
+    QVERIFY(std::abs(layout.mmPerUnit() - 10.0) < 1e-9);
+    QCOMPARE(layout.separation(0, 29), 1);
+    // Same-side pins cannot connect; corners belong to both adjacent sides.
+    QVERIFY(!layout.canConnect(1, 9));   // top
+    QVERIFY(!layout.canConnect(0, 5));   // corner and top
+    QVERIFY(!layout.canConnect(0, 28));  // corner and left
+    QVERIFY(!layout.canConnect(10, 13)); // corner and right
+    QVERIFY(layout.canConnect(5, 20));   // top to bottom
+    QVERIFY(layout.canConnect(10, 25));  // opposite corners
+    QVERIFY(!layout.canConnect(4, 4));
+    const PinLayout circle = PinLayout::circular(10, 64, 64);
+    QVERIFY(circle.canConnect(0, 1));
+    QVERIFY(!circle.canConnect(3, 3));
+}
+
+void TestGeometry::customPins()
+{
+    // A 200 x 100 mm triangle-ish shape fitted into 202 x 102 px.
+    const std::vector<Vec2> mm{{0, 0}, {200, 0}, {200, 100}, {100, 60}, {0, 100}};
+    const PinLayout layout = PinLayout::custom(mm, 202, 102);
+    QCOMPARE(layout.pinCount(), 5);
+    QCOMPARE(layout.kind(), PinLayoutKind::Custom);
+    QVERIFY(std::abs(layout.mmPerUnit() - 1.0) < 1e-9);
+    QCOMPARE(layout.pin(0), (Vec2{1.0, 1.0}));
+    QCOMPARE(layout.pin(2), (Vec2{201.0, 101.0}));
+    QCOMPARE(layout.pin(3), (Vec2{101.0, 61.0}));
+
+    QVERIFY_THROWS_EXCEPTION(std::invalid_argument, PinLayout::custom({{0, 0}, {1, 1}}, 64, 64));
+    QVERIFY_THROWS_EXCEPTION(std::invalid_argument, PinLayout::custom({{0, 0}, {1, 1}, {2, 2}}, 64, 64));
+    QVERIFY_THROWS_EXCEPTION(std::invalid_argument, PinLayout::custom({{0, 0}, {1, 0}, {2, 0}}, 64, 64));
+}
+
+void TestGeometry::canvasSizeFollowsAspect()
+{
+    FrameSpec frame;
+    QCOMPARE(PinLayout::canvasSize(frame, 512), (std::pair{512, 512}));
+    frame.kind = PinLayoutKind::Rectangular;
+    frame.widthMm = 600;
+    frame.heightMm = 400;
+    QCOMPARE(PinLayout::canvasSize(frame, 512), (std::pair{512, 341}));
+    frame.kind = PinLayoutKind::Elliptical;
+    frame.widthMm = 300;
+    frame.heightMm = 600;
+    QCOMPARE(PinLayout::canvasSize(frame, 512), (std::pair{256, 512}));
+    frame.kind = PinLayoutKind::Custom;
+    frame.customPinsMm = {{0, 0}, {100, 0}, {50, 50}};
+    QCOMPARE(PinLayout::canvasSize(frame, 512), (std::pair{512, 256}));
+    const PinLayout layout = PinLayout::fromFrame(frame, 512);
+    QCOMPARE(layout.canvasWidth(), 512);
+    QCOMPARE(layout.canvasHeight(), 256);
+
+    frame.kind = PinLayoutKind::Rectangular;
+    frame.heightMm = 0.0;
+    QVERIFY_THROWS_EXCEPTION(std::invalid_argument, PinLayout::canvasSize(frame, 512));
+}
+
+void TestGeometry::reachableMask()
+{
+    const PinLayout rect = PinLayout::rectangular(32, 52, 32, 100, 60);
+    const std::vector<float> mask = rect.reachableMask();
+    // Pixel centres inside [1, 51] x [1, 31] are reachable.
+    for (int y = 0; y < 32; ++y) {
+        for (int x = 0; x < 52; ++x) {
+            const bool inside = x >= 1 && x <= 50 && y >= 1 && y <= 30;
+            QCOMPARE(mask[static_cast<std::size_t>(y) * 52 + x], inside ? 1.0f : 0.0f);
+        }
+    }
+    // Circle: mask area approximates pi r^2 (inscribed polygon slightly smaller).
+    const PinLayout circle = PinLayout::circular(360, 200, 200);
+    double area = 0.0;
+    for (float v : circle.reachableMask())
+        area += v;
+    const double expected = std::numbers::pi * 99.0 * 99.0;
+    QVERIFY(std::abs(area - expected) / expected < 0.01);
 }
 
 QTEST_GUILESS_MAIN(TestGeometry)

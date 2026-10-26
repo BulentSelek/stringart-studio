@@ -21,7 +21,7 @@ LineCache::LineCache(const PinLayout &layout, double threadWidth, int imageWidth
     std::size_t estimatedSamples = 0;
     for (int a = 0; a < n; ++a) {
         for (int b = a + 1; b < n; ++b) {
-            if (layout.separation(a, b) < minSeparation)
+            if (layout.separation(a, b) < minSeparation || !layout.canConnect(a, b))
                 continue;
             const Vec2 &p = layout.pin(a);
             const Vec2 &q = layout.pin(b);
@@ -45,7 +45,7 @@ LineCache::LineCache(const PinLayout &layout, double threadWidth, int imageWidth
         auto &counts = rowCounts[static_cast<std::size_t>(a)];
         counts.assign(static_cast<std::size_t>(n - a - 1), 0);
         for (int b = a + 1; b < n; ++b) {
-            if (layout.separation(a, b) < minSeparation)
+            if (layout.separation(a, b) < minSeparation || !layout.canConnect(a, b))
                 continue;
             rasterizePinLine(layout, a, b, threadWidth, imageWidth, imageHeight, scratch);
             samples.insert(samples.end(), scratch.begin(), scratch.end());

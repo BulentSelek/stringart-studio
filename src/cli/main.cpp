@@ -1,10 +1,13 @@
 #include "algorithms/GreedyOptimizer.h"
 #include "core/ExportManager.h"
 #include "core/ImageProcessor.h"
+#include "core/ProjectFile.h"
 #include "core/ThreadRenderer.h"
 
 #include <QCommandLineParser>
 #include <QCoreApplication>
+#include <QFile>
+#include <QFileInfo>
 #include <QImageReader>
 
 #include <cstdio>
@@ -59,7 +62,12 @@ int main(int argc, char *argv[])
         {QStringLiteral("min-sep"), QStringLiteral("Minimum pin separation."), QStringLiteral("n"), QStringLiteral("20")},
         {QStringLiteral("start-pin"), QStringLiteral("Starting pin."), QStringLiteral("n"), QStringLiteral("0")},
         {QStringLiteral("max-length-mm"), QStringLiteral("Maximum thread length in mm (0 = unlimited)."), QStringLiteral("mm"), QStringLiteral("0")},
-        {QStringLiteral("diameter-mm"), QStringLiteral("Physical frame diameter in mm."), QStringLiteral("mm"), QStringLiteral("500")},
+        {QStringLiteral("shape"), QStringLiteral("Frame: circle, ellipse, rectangle or custom."), QStringLiteral("shape"), QStringLiteral("circle")},
+        {{QStringLiteral("width-mm"), QStringLiteral("diameter-mm")}, QStringLiteral("Frame width (circle: diameter) in mm."), QStringLiteral("mm"), QStringLiteral("500")},
+        {QStringLiteral("height-mm"), QStringLiteral("Frame height in mm (ellipse, rectangle)."), QStringLiteral("mm"), QStringLiteral("500")},
+        {QStringLiteral("pins-csv"), QStringLiteral("Custom pin positions (x, y in mm); implies --shape custom."), QStringLiteral("path")},
+        {QStringLiteral("rotate"), QStringLiteral("Rotate the input clockwise by degrees."), QStringLiteral("deg"), QStringLiteral("0")},
+        {QStringLiteral("edge-emphasis"), QStringLiteral("Extra error weight on edges (0 = plain MSE)."), QStringLiteral("k"), QStringLiteral("0")},
         {QStringLiteral("brightness"), QStringLiteral("Brightness offset [-1, 1]."), QStringLiteral("v"), QStringLiteral("0")},
         {QStringLiteral("contrast"), QStringLiteral("Contrast multiplier."), QStringLiteral("v"), QStringLiteral("1")},
         {QStringLiteral("gamma"), QStringLiteral("Gamma (> 1 brightens)."), QStringLiteral("v"), QStringLiteral("1")},
@@ -70,6 +78,8 @@ int main(int argc, char *argv[])
         {QStringLiteral("png-size"), QStringLiteral("Output PNG size in pixels."), QStringLiteral("px"), QStringLiteral("2048")},
         {QStringLiteral("csv"), QStringLiteral("Output CSV path."), QStringLiteral("path")},
         {QStringLiteral("csv-units"), QStringLiteral("CSV units: mm or px."), QStringLiteral("unit"), QStringLiteral("mm")},
+        {QStringLiteral("svg"), QStringLiteral("Output SVG path (millimetres)."), QStringLiteral("path")},
+        {QStringLiteral("json"), QStringLiteral("Output JSON path (settings, pins, sequence)."), QStringLiteral("path")},
         {QStringLiteral("quiet"), QStringLiteral("Do not print progress.")},
     });
     parser.process(app);
@@ -94,12 +104,35 @@ int main(int argc, char *argv[])
         tone.contrast = doubleOption(parser, QStringLiteral("contrast"));
         tone.gamma = doubleOption(parser, QStringLiteral("gamma"));
         tone.invert = parser.isSet(QStringLiteral("invert"));
-        const sa::GrayImage working =
-            sa::ImageProcessor::applyTone(sa::ImageProcessor::prepareBase(original, size, size), tone);
-
-        const sa::PinLayout pins = sa::PinLayout::circular(intOption(parser, QStringLiteral("pins")), size, size,
-                                                           doubleOption(parser, QStringLiteral("diameter-mm")));
-        const sa::OptimizationProblem problem = sa::OptimizationProblem::fromImage(working, pins);
+        sa::FrameSpec frame;
+        const QString shape = parser.isSet(QStringLiteral("pins-csv")) ? QStringLiteral("custom")
+                                                                       : parser.value(QStringLiteral("shape"));
+        if (shape == u"circle")
+            frame.kind = sa::PinLayoutKind::Circular;
+        else if (shape == u"ellipse")
+            frame.kind = sa::PinLayoutKind::Elliptical;
+        else if (shape == u"rectangle")
+            frame.kind = sa::PinLayoutKind::Rectangular;
+        else if (shape == u"custom")
+            frame.kind = sa::PinLayoutKind::Custom;
+        else
+            fail(QStringLiteral("--shape must be circle, ellipse, rectangle or custom"));
+        frame.pinCount = intOption(parser, QStringLiteral("pins"));
+        frame.widthMm = doubleOption(parser, QStringLiteral("width-mm"));
+        frame.heightMm = frame.kind == sa::PinLayoutKind::Circular ? frame.widthMm
+                                                                   : doubleOption(parser, QStringLiteral("height-mm"));
+        if (frame.kind == sa::PinLayoutKind::Custom) {
+            QFile pinFile(parser.value(QStringLiteral("pins-csv")));
+            if (!pinFile.open(QIODevice::ReadOnly | QIODevice::Text))
+                fail(QStringLiteral("--shape custom needs a readable --pins-csv file"));
+            frame.customPinsMm = sa::ProjectFile::parsePinCsv(QString::fromUtf8(pinFile.readAll()));
+        }
+        const sa::PinLayout pins = sa::PinLayout::fromFrame(frame, size);
+        const double rotation = doubleOption(parser, QStringLiteral("rotate"));
+        const double edgeEmphasis = doubleOption(parser, QStringLiteral("edge-emphasis"));
+        const sa::GrayImage working = sa::ImageProcessor::applyTone(
+            sa::ImageProcessor::prepareBase(original, pins.canvasWidth(), pins.canvasHeight(), {}, rotation), tone);
+        const sa::OptimizationProblem problem = sa::OptimizationProblem::fromImage(working, pins, edgeEmphasis);
 
         sa::OptimizationConfig config;
         config.maxSegments = intOption(parser, QStringLiteral("segments"));
@@ -139,6 +172,7 @@ int main(int argc, char *argv[])
             style.threadWidth = config.threadWidth;
             style.opacity = config.threadOpacity;
             const double scale = static_cast<double>(intOption(parser, QStringLiteral("png-size"))) / size;
+            // --png-size is the long side, like --size.
             QString error;
             if (!sa::ExportManager::writePng(parser.value(QStringLiteral("png")),
                                              sa::ThreadRenderer::render(pins, result.sequence, style, scale), &error))
@@ -153,6 +187,35 @@ int main(int argc, char *argv[])
                                              units == u"mm" ? sa::LengthUnit::Millimeters : sa::LengthUnit::Pixels,
                                              &error))
                 fail(QStringLiteral("CSV export failed: %1").arg(error));
+        }
+        if (parser.isSet(QStringLiteral("svg"))) {
+            sa::RenderStyle style;
+            style.threadWidth = config.threadWidth;
+            style.opacity = config.threadOpacity;
+            QString error;
+            if (!sa::ExportManager::writeSvg(parser.value(QStringLiteral("svg")), pins, result.sequence, style, true,
+                                             &error))
+                fail(QStringLiteral("SVG export failed: %1").arg(error));
+        }
+        if (parser.isSet(QStringLiteral("json"))) {
+            sa::ProjectData project;
+            project.frame = frame;
+            project.workingSize = size;
+            project.imagePath = QFileInfo(positional.first()).absoluteFilePath();
+            project.rotationDegrees = rotation;
+            project.tone = tone;
+            project.config = config;
+            project.edgeEmphasis = edgeEmphasis;
+            project.sequence = result.sequence;
+            project.stopReason = QString::fromUtf8(sa::toString(result.stopReason));
+            project.initialError = result.initialError;
+            project.finalError = result.finalError;
+            project.threadLengthMm = result.threadLengthMm;
+            project.elapsedSeconds = result.elapsedSeconds;
+            QString error;
+            if (!sa::ExportManager::writeText(parser.value(QStringLiteral("json")),
+                                              sa::ProjectFile::toJson(project, false, true), &error))
+                fail(QStringLiteral("JSON export failed: %1").arg(error));
         }
     } catch (const std::exception &e) {
         fail(QString::fromUtf8(e.what()));

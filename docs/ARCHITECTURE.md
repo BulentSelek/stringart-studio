@@ -1,6 +1,6 @@
 # Architecture and Models
 
-Status: Phase 1 (functional MVP). This document describes what is implemented,
+Status: Phase 1 (functional MVP) and Phase 2 (quality improvements). This document describes what is implemented,
 the mathematical models, and the design decisions taken where the
 specification left room for choice.
 
@@ -11,7 +11,7 @@ src/
 ├── core/                  stringart_core (static lib: Qt Core, Gui, Concurrent; no Qt Quick)
 │   ├── GrayImage.h            float image buffer
 │   ├── ImageProcessor.*       non-destructive preprocessing pipeline
-│   ├── PinGeometry.*          circular pin layout, physical scale
+│   ├── PinGeometry.*          circular, elliptical, rectangular, custom layouts; physical scale
 │   ├── LineRasterizer.*       anti-aliased, ink-conserving line coverage
 │   ├── LineCache.*            precomputed line coverage under a memory budget
 │   ├── Compositing.*          thread compositing model + sRGB transfer
@@ -19,7 +19,8 @@ src/
 │   ├── OptimizationConfig.*   parameters + validation
 │   ├── OptimizationProblem.*  target, weights, pins; objective definition
 │   ├── StringArtResult.*      result, progress snapshot, stop reasons
-│   └── ExportManager.*        PNG and CSV export
+│   ├── ExportManager.*        PNG, CSV and SVG export
+│   └── ProjectFile.*          JSON project format, custom pin CSV import
 ├── algorithms/
 │   ├── IOptimizer.h           common optimizer interface
 │   └── GreedyOptimizer.*      Algorithm A
@@ -38,13 +39,28 @@ examples/                  deterministic synthetic test images
 Dependency direction: `app -> algorithms/core`, `cli -> algorithms/core`.
 Nothing in `core` or `algorithms` includes Qt Quick or QML headers.
 
-## Coordinate system
+## Coordinate system and frames
 
 Working-image continuous pixel coordinates: pixel `(x, y)` covers
-`[x, x+1) x [y, y+1)`, y points down. Circular pins lie on the largest circle
-that fits the canvas with a one-pixel margin; pin 0 is at the top and indices
-increase clockwise. `PinLayout::mmPerUnit()` maps working units to millimetres
-from the physical frame diameter (pin circle diameter).
+`[x, x+1) x [y, y+1)`, y points down. A `FrameSpec` (shape, pin count,
+physical size or custom pins in mm) plus the working size (pixels on the long
+side) defines the canvas: square for circles, the frame's aspect ratio
+otherwise. Pins stay one pixel inside the canvas and are numbered clockwise
+along the perimeter. `PinLayout::mmPerUnit()` maps working units to mm.
+
+| shape | placement | pin 0 |
+|---|---|---|
+| circular | equal angles on the inscribed circle | top |
+| elliptical | equal arc length on the inscribed ellipse (arc length tabulated with ≥ 4096 samples) | top |
+| rectangular | equal perimeter steps on the inset rectangle; corners only get a pin when the step divides the side | top-left corner |
+| custom | CSV points (mm) in file order, uniformly scaled and centred | first row |
+
+Connection rules: perimeter separation ≥ `minPinSeparation` (cyclic index
+distance, so custom files must list pins in perimeter order) and
+`PinLayout::canConnect`: on rectangles, pins on the same side are never
+connected because the thread would lie along the frame edge. The
+optimization mask is the convex hull of the pins (scanline-filled), i.e. the
+area threads can reach.
 
 ## Preprocessing pipeline
 
@@ -54,8 +70,16 @@ scaling), gray = Rec. 709 luminance computed in linear light, re-encoded to sRGB
 → `applyTone`: invert, contrast around 0.5, brightness offset, gamma `v^(1/γ)`
 → display-encoded working image `g` in [0, 1].
 
-The controller caches the base image and only re-runs `applyTone` when tone
-sliders move.
+`prepareBase` first rotates (arbitrary angle, expanded canvas, new corners
+white), then crops. The crop is normalized to the rotated image; the crop
+actually used (`effectiveCrop`) is the largest rectangle with the canvas
+aspect ratio centred in the requested crop, so the working image is never
+distorted. The UI locks the crop frame to that aspect.
+
+The app works from a copy of the photo limited to 2048 px on the long side
+(working sizes are ≤ 1024 px) so rotation and crop stay interactive; crop,
+rotation and frame changes are debounced by 60 ms, tone changes apply
+immediately. The original file bytes are kept for embedding in projects.
 
 ## Compositing model (shared by optimizer and renderer)
 
@@ -102,8 +126,13 @@ E(T) = Σ_p w_p · (enc(T_p) − g_p)² / Σ_p w_p
 ```
 
 `enc` is the sRGB transfer function (table-driven, `SrgbEncoder`), `g` the
-display-encoded target and `w` per-pixel weights (1 inside the pin circle, 0
-outside — no thread can reach the outside).
+display-encoded target and `w` per-pixel weights: 0 outside the convex hull
+of the pins, otherwise `1 + k·e_p`. `e_p ∈ [0, 1]` is the edge strength
+(Sobel magnitude, 3×3 box blur, divided by its 99th percentile, clamped) and
+`k ≥ 0` the *edge emphasis*. `k = 0` is plain MSE. Larger `k` makes errors on
+contours and features cost more, so more thread goes to eyes, mouth and
+outlines at the expense of flat regions. Errors computed with different `k`
+are not comparable.
 
 Decision: compositing is physical (linear light), but the error is measured in
 display-encoded space. Measuring in linear light was implemented first; it
@@ -146,6 +175,13 @@ candidate.
 The output is always a single continuous thread: segment `i` joins
 `sequence[i]` and `sequence[i+1]`.
 
+## Residual visualization
+
+`ThreadRenderer::residualImage` maps `enc(T) − g` to a diverging image: red
+where the result is lighter than the target (more thread would help), blue
+where it is darker, white where they match, gray where the weight is zero.
+The worker publishes it with each preview.
+
 ## Algorithms B and C
 
 Not implemented (Phase 4). `IOptimizer` is the extension point. When added,
@@ -170,11 +206,25 @@ quality, distinct from the manufacturable single-thread sequence.
   required property; the `ImageStore` is shared via `std::shared_ptr` so
   destruction order between engine and controller is safe.
 
-## Export formats (Phase 1)
+## Export formats
 
-- PNG: re-rendered at the requested size (pin coordinates and thread width
-  scaled; opacity unchanged, so a box-downsampled export approximates the
-  working preview — tested).
+- PNG: re-rendered with the long side at the requested size (pin coordinates
+  and thread width scaled; opacity unchanged, so a box-downsampled export
+  approximates the working preview — tested).
 - CSV: `segment,from_pin,to_pin,from_x,from_y,to_x,to_y,length,cumulative_length`
-  with `_mm` or `_px` suffixes. Pins are 0-based, pin 0 at the top, clockwise;
+  with `_mm` or `_px` suffixes. Pins are 0-based in layout order;
   coordinates are relative to the canvas top-left corner, y down.
+- SVG: millimetre units (`viewBox` = physical canvas), one `<line>` per
+  segment with `stroke-opacity` = thread opacity so overlaps compound, plus
+  pin markers. SVG viewers composite in sRGB rather than linear light, so
+  mid-tones look somewhat darker than the PNG.
+- JSON / project (`.sasproj`): format `stringart-studio-project`, version 1:
+  `frame`, `workingSize`, `image` (path, rotation, crop, tone, optionally the
+  original file bytes as base64), `optimization`, `render`, `result`
+  (sequence and statistics). The project file embeds the image; the JSON
+  export omits it and adds a `pins` array with every pin's position in mm.
+  Loading validates every field and rejects sequences with out-of-range pins.
+  The rendered result is not stored: it is re-rendered from the sequence
+  (deterministic), and re-running the saved settings reproduces the same
+  sequence (tested). When a result exists, the project stores the settings
+  of the run that produced it (current colours), not later edits.

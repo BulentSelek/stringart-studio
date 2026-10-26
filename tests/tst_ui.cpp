@@ -31,6 +31,7 @@ private slots:
     void loadsWithoutWarnings();
     void fullWorkflow();
     void pauseResumeCancel();
+    void phase2Workflow();
 
 private:
     QTemporaryDir m_dir;
@@ -162,6 +163,73 @@ void TestUi::pauseResumeCancel()
     QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 30000);
     QVERIFY(m_controller->statusText().contains(QStringLiteral("cancelled")));
     QVERIFY(m_controller->hasResult()); // partial result remains available
+}
+
+void TestUi::phase2Workflow()
+{
+    QVERIFY(m_controller->loadImage(m_portrait));
+    m_controller->setProperty("frameShape", ProjectController::Rectangle);
+    m_controller->setProperty("frameWidthMm", 600.0);
+    m_controller->setProperty("frameHeightMm", 400.0);
+    m_controller->setProperty("pinCount", 200);
+    m_controller->setProperty("maxSegments", 1500);
+    m_controller->setProperty("edgeEmphasis", 1.5);
+    m_controller->rotateBy(90);
+    m_controller->setProperty("crop", QRectF(0.1, 0.1, 0.8, 0.8));
+    QCOMPARE(m_controller->canvasWidth(), 512);
+    QCOMPARE(m_controller->canvasHeight(), 341);
+    // The processed image follows the frame aspect once the debounce fires.
+    QTRY_COMPARE(m_store->get(QStringLiteral("processed")).size(), QSize(512, 341));
+    const QRectF crop = m_controller->effectiveCrop();
+    QVERIFY(crop.width() > 0 && crop.left() >= 0.1 - 1e-9 && crop.right() <= 0.9 + 1e-9);
+
+    m_controller->start();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
+    QVERIFY2(m_controller->hasResult(), qPrintable(m_controller->statusText()));
+    QCOMPARE(m_store->get(QStringLiteral("residual")).size(), QSize(512, 341));
+    const int segments = m_controller->segments();
+    const double error = m_controller->error();
+
+    const QString svg = m_dir.filePath(QStringLiteral("art.svg"));
+    const QString json = m_dir.filePath(QStringLiteral("art.json"));
+    const QString project = m_dir.filePath(QStringLiteral("art.sasproj"));
+    m_controller->exportSvg(QUrl::fromLocalFile(svg));
+    m_controller->exportJson(QUrl::fromLocalFile(json));
+    QVERIFY(m_controller->saveProject(QUrl::fromLocalFile(project)));
+    QFile svgFile(svg);
+    QVERIFY(svgFile.open(QIODevice::ReadOnly));
+    QCOMPARE(svgFile.readAll().count("<line "), segments);
+    QVERIFY(QFile::exists(json));
+
+    // Change everything, then reopen the project.
+    m_controller->setProperty("frameShape", ProjectController::Circle);
+    m_controller->setProperty("pinCount", 50);
+    m_controller->resetCrop();
+    QVERIFY(m_controller->loadImage(QUrl::fromLocalFile(m_dir.filePath(QStringLiteral("portrait.png")))));
+    QVERIFY(!m_controller->hasResult());
+
+    QVERIFY2(m_controller->openProject(QUrl::fromLocalFile(project)), qPrintable(m_controller->statusText()));
+    QVERIFY(m_controller->hasImage());
+    QVERIFY(m_controller->hasResult());
+    QCOMPARE(m_controller->property("frameShape").toInt(), int(ProjectController::Rectangle));
+    QCOMPARE(m_controller->property("pinCount").toInt(), 200);
+    QCOMPARE(m_controller->property("rotation").toDouble(), 90.0);
+    QCOMPARE(m_controller->property("edgeEmphasis").toDouble(), 1.5);
+    QCOMPARE(m_controller->segments(), segments);
+    QCOMPARE(m_controller->error(), error);
+    QCOMPARE(m_store->get(QStringLiteral("result")).size(), QSize(512, 341));
+    QCOMPARE(m_store->get(QStringLiteral("residual")).size(), QSize(512, 341));
+
+    // Re-running the restored settings reproduces the same result.
+    m_controller->start();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
+    QCOMPARE(m_controller->segments(), segments);
+    QVERIFY(std::abs(m_controller->error() - error) < 1e-12);
+
+    QTest::qWait(300);
+    const QByteArray shot = qgetenv("STRINGART_UI_SCREENSHOT2");
+    if (!shot.isEmpty())
+        QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(shot)));
 }
 
 QTEST_MAIN(TestUi)

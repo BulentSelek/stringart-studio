@@ -11,7 +11,8 @@ class QThreadPool;
 
 namespace sa {
 
-// Rasterized coverage of every valid pin pair (separation >= minSeparation).
+// Rasterized coverage of every valid pin pair (separation >= minSeparation
+// and PinLayout::canConnect).
 //
 // If the estimated memory fits `budgetBytes`, all lines are rasterized up
 // front (in parallel on `pool`). Otherwise lines are rasterized on demand into

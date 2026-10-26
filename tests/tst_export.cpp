@@ -1,3 +1,4 @@
+#include "core/Compositing.h"
 #include "core/ExportManager.h"
 #include "core/ThreadRenderer.h"
 
@@ -22,6 +23,8 @@ private slots:
     void pngWriteAndReadBack();
     void pngNullImageFails();
     void highResolutionRender();
+    void svgContents();
+    void residualImage();
 };
 
 void TestExport::csvContents()
@@ -129,6 +132,50 @@ void TestExport::highResolutionRender()
     style.thread = QColor(120, 0, 0);
     const QImage coloured = ThreadRenderer::render(layout, sequence, style);
     QCOMPARE(coloured.pixel(0, 0), QColor(250, 240, 220).rgb());
+}
+
+void TestExport::svgContents()
+{
+    const PinLayout layout = PinLayout::circular(4, 102, 102, 100.0); // 1 mm per unit
+    const std::vector<int> sequence{0, 2, 1};
+    RenderStyle style;
+    style.opacity = 0.25f;
+    style.threadWidth = 2.0;
+    style.thread = QColor(10, 20, 30);
+    const QString svg = ExportManager::svgText(layout, sequence, style, true);
+    QVERIFY(svg.contains(QStringLiteral("width=\"102.000mm\" height=\"102.000mm\" viewBox=\"0 0 102.000 102.000\"")));
+    QVERIFY(svg.contains(QStringLiteral("stroke=\"#0a141e\" stroke-opacity=\"0.2500\" stroke-width=\"2.000\"")));
+    QCOMPARE(svg.count(QStringLiteral("<line ")), 2);
+    QVERIFY(svg.contains(QStringLiteral("<line x1=\"51.000\" y1=\"1.000\" x2=\"51.000\" y2=\"101.000\"/>")));
+    QCOMPARE(svg.count(QStringLiteral("<circle ")), 4);
+    QCOMPARE(ExportManager::svgText(layout, sequence, style, false).count(QStringLiteral("<circle ")), 0);
+
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("art.svg"));
+    QString error;
+    QVERIFY2(ExportManager::writeSvg(path, layout, sequence, style, true, &error), qPrintable(error));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(QString::fromUtf8(file.readAll()), svg);
+    // Qt's SVG-capable image reader is optional; parsing well-formedness is
+    // checked through QImageReader only when the plugin is present.
+    if (QImageReader::supportedImageFormats().contains("svg")) {
+        QImageReader reader(path);
+        QVERIFY2(reader.canRead(), qPrintable(reader.errorString()));
+    }
+}
+
+void TestExport::residualImage()
+{
+    const std::vector<float> transmittance{1.0f, 0.0f, 0.5f, 1.0f};
+    const std::vector<float> target{1.0f, 1.0f, SrgbEncoder::encode(0.5f), 0.0f};
+    const std::vector<float> weights{1.0f, 1.0f, 1.0f, 0.0f};
+    const QImage image = ThreadRenderer::residualImage(transmittance, target, weights, 2, 2);
+    QCOMPARE(image.pixel(0, 0), qRgb(255, 255, 255)); // exact match
+    QCOMPARE(image.pixel(1, 0), qRgb(0, 0, 255));     // fully too dark
+    QCOMPARE(image.pixel(0, 1), qRgb(255, 255, 255));
+    QCOMPARE(image.pixel(1, 1), qRgb(96, 96, 96));    // zero weight
+    QVERIFY(ThreadRenderer::residualImage(transmittance, target, weights, 3, 3).isNull());
 }
 
 QTEST_GUILESS_MAIN(TestExport)

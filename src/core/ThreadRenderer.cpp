@@ -73,6 +73,29 @@ QImage ThreadRenderer::toImage(std::span<const float> transmittance, int width, 
     return image;
 }
 
+QImage ThreadRenderer::residualImage(std::span<const float> transmittance, std::span<const float> target,
+                                     std::span<const float> weights, int width, int height)
+{
+    const auto size = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    if (transmittance.size() != size || target.size() != size || weights.size() != size)
+        return {};
+    QImage image(width, height, QImage::Format_RGB32);
+    for (int y = 0; y < height; ++y) {
+        auto *line = reinterpret_cast<QRgb *>(image.scanLine(y));
+        for (int x = 0; x < width; ++x) {
+            const std::size_t i = static_cast<std::size_t>(y) * width + x;
+            if (weights[i] <= 0.0f) {
+                line[x] = qRgb(96, 96, 96);
+                continue;
+            }
+            const float r = std::clamp(SrgbEncoder::encode(transmittance[i]) - target[i], -1.0f, 1.0f);
+            const int fade = static_cast<int>(std::lround(255.0f * (1.0f - std::abs(r))));
+            line[x] = r >= 0.0f ? qRgb(255, fade, fade) : qRgb(fade, fade, 255);
+        }
+    }
+    return image;
+}
+
 QImage ThreadRenderer::render(const PinLayout &layout, std::span<const int> sequence, const RenderStyle &style,
                               double scale, std::size_t segmentLimit)
 {

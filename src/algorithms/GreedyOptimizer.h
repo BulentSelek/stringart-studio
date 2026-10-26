@@ -13,7 +13,8 @@ namespace sa {
 // target gray g and weights w (see OptimizationProblem).
 // Objective: S(T) = sum_p w_p (enc(T_p) - g_p)^2  (E = S / sum w is reported).
 //
-// Each iteration evaluates every valid line (current, j) and computes the
+// Each iteration evaluates every valid line (current, j) (separation >=
+// minPinSeparation, PinLayout::canConnect, unused unless repeats are allowed) and computes the
 // exact change of S if that line were added, touching only its pixels:
 //
 //     dS = sum_{p in line} w_p [ (enc(T_p (1 - a c_p)) - g_p)^2 - (E_p - g_p)^2 ]

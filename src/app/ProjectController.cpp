@@ -6,33 +6,203 @@
 #include "core/ImageProcessor.h"
 #include "core/OptimizationProblem.h"
 
+#include <QBuffer>
+#include <QFile>
 #include <QFileInfo>
 #include <QFuture>
 #include <QImageReader>
 #include <QtConcurrent/QtConcurrentRun>
 
-#include <cmath>
 #include <exception>
 
 namespace {
 
-constexpr int kMaxDisplaySize = 2048;
+constexpr int kMaxSourceSize = 2048;
+constexpr int kBaseUpdateDelayMs = 60;
+
+QImage readImage(const QByteArray &bytes, QString *error)
+{
+    QBuffer buffer;
+    buffer.setData(bytes);
+    buffer.open(QIODevice::ReadOnly);
+    QImageReader reader(&buffer);
+    reader.setAutoTransform(true);
+    QImage image = reader.read();
+    if (image.isNull() && error)
+        *error = reader.errorString();
+    return image;
+}
 
 } // namespace
 
 ProjectController::ProjectController(std::shared_ptr<ImageStore> store, QObject *parent)
     : QObject(parent), m_store(std::move(store)), m_worker(new OptimizationWorker(m_store, this))
 {
+    m_baseTimer.setSingleShot(true);
+    m_baseTimer.setInterval(kBaseUpdateDelayMs);
+    connect(&m_baseTimer, &QTimer::timeout, this, &ProjectController::updateBase);
     connect(m_worker, &OptimizationWorker::progressed, this, &ProjectController::onWorkerProgress);
     connect(m_worker, &OptimizationWorker::finished, this, &ProjectController::onWorkerFinished);
-    connect(this, &ProjectController::workingSizeChanged, this, &ProjectController::updateBase);
+    connect(this, &ProjectController::layoutChanged, this, &ProjectController::scheduleBaseUpdate);
+    connect(this, &ProjectController::geometryChanged, this, &ProjectController::scheduleBaseUpdate);
     connect(this, &ProjectController::toneChanged, this, &ProjectController::updateProcessed);
-    connect(this, &ProjectController::pinCountChanged, this, &ProjectController::pinPositionsChanged);
-    connect(this, &ProjectController::renderStyleChanged, this, &ProjectController::updateResultImage);
+    connect(this, &ProjectController::renderStyleChanged, this, &ProjectController::updateResultImages);
+    for (auto signal : {&ProjectController::geometryChanged, &ProjectController::layoutChanged,
+                        &ProjectController::imagesChanged})
+        connect(this, signal, this, &ProjectController::effectiveCropChanged);
     setStatus(tr("Load an image to begin (File dialog or drag and drop)."));
 }
 
 ProjectController::~ProjectController() = default;
+
+QString ProjectController::localPath(const QUrl &url)
+{
+    return url.isLocalFile() ? url.toLocalFile() : url.toString();
+}
+
+// ---------------------------------------------------------------- settings
+
+sa::FrameSpec ProjectController::frameSpec() const
+{
+    sa::FrameSpec frame;
+    frame.kind = static_cast<sa::PinLayoutKind>(m_frameShape);
+    frame.pinCount = m_pinCount;
+    frame.widthMm = m_frameWidthMm;
+    frame.heightMm = m_frameShape == Circle ? m_frameWidthMm : m_frameHeightMm;
+    if (m_frameShape == Custom)
+        frame.customPinsMm = m_customPinsMm;
+    return frame;
+}
+
+std::optional<sa::PinLayout> ProjectController::currentLayout() const
+{
+    try {
+        return sa::PinLayout::fromFrame(frameSpec(), m_workingSize);
+    } catch (const std::exception &) {
+        return std::nullopt;
+    }
+}
+
+int ProjectController::canvasWidth() const
+{
+    try {
+        return sa::PinLayout::canvasSize(frameSpec(), m_workingSize).first;
+    } catch (const std::exception &) {
+        return m_workingSize;
+    }
+}
+
+int ProjectController::canvasHeight() const
+{
+    try {
+        return sa::PinLayout::canvasSize(frameSpec(), m_workingSize).second;
+    } catch (const std::exception &) {
+        return m_workingSize;
+    }
+}
+
+double ProjectController::mmPerPixel() const
+{
+    const std::optional<sa::PinLayout> layout = currentLayout();
+    return layout ? layout->mmPerUnit() : 0.0;
+}
+
+QVariantList ProjectController::pinPositions() const
+{
+    QVariantList positions;
+    const std::optional<sa::PinLayout> layout = currentLayout();
+    if (!layout)
+        return positions;
+    positions.reserve(layout->pinCount());
+    for (const sa::Vec2 &p : layout->pins())
+        positions.append(QPointF(p.x / layout->canvasWidth(), p.y / layout->canvasHeight()));
+    return positions;
+}
+
+sa::ProjectData ProjectController::currentSettings() const
+{
+    sa::ProjectData p;
+    p.frame = frameSpec();
+    p.workingSize = m_workingSize;
+    p.imagePath = m_imagePath;
+    p.imageData = m_sourceBytes;
+    p.crop = m_crop;
+    p.rotationDegrees = m_rotation;
+    p.tone = {m_brightness, m_contrast, m_gamma, m_invert};
+    p.config.maxSegments = m_maxSegments;
+    p.config.minPinSeparation = m_minSeparation;
+    p.config.startPin = m_startPin;
+    p.config.threadOpacity = static_cast<float>(m_opacity);
+    p.config.threadWidth = m_threadWidth;
+    p.config.maxThreadLengthMm = m_maxLengthM * 1000.0;
+    p.config.allowRepeatedLines = m_allowRepeats;
+    p.edgeEmphasis = m_edgeEmphasis;
+    p.threadColor = m_threadColor;
+    p.backgroundColor = m_backgroundColor;
+    return p;
+}
+
+sa::ProjectData ProjectController::projectForSaving() const
+{
+    // A result is only meaningful with the settings that produced it.
+    if (!hasResult())
+        return currentSettings();
+    sa::ProjectData p = m_runSettings;
+    p.imagePath = m_imagePath;
+    p.imageData = m_sourceBytes;
+    p.threadColor = m_threadColor;
+    p.backgroundColor = m_backgroundColor;
+    p.sequence = m_resultSequence;
+    p.stopReason = m_stopReason;
+    p.initialError = m_initialError;
+    p.finalError = m_error;
+    p.threadLengthMm = m_threadLengthMm;
+    p.elapsedSeconds = m_elapsedSeconds;
+    return p;
+}
+
+void ProjectController::applySettings(const sa::ProjectData &p)
+{
+    m_frameShape = static_cast<FrameShape>(p.frame.kind);
+    m_pinCount = p.frame.pinCount;
+    m_frameWidthMm = p.frame.widthMm;
+    m_frameHeightMm = p.frame.heightMm;
+    m_customPinsMm = p.frame.customPinsMm;
+    m_workingSize = p.workingSize;
+    m_crop = p.crop;
+    m_rotation = p.rotationDegrees;
+    m_brightness = p.tone.brightness;
+    m_contrast = p.tone.contrast;
+    m_gamma = p.tone.gamma;
+    m_invert = p.tone.invert;
+    m_maxSegments = p.config.maxSegments;
+    m_minSeparation = p.config.minPinSeparation;
+    m_startPin = p.config.startPin;
+    m_opacity = p.config.threadOpacity;
+    m_threadWidth = p.config.threadWidth;
+    m_maxLengthM = p.config.maxThreadLengthMm / 1000.0;
+    m_allowRepeats = p.config.allowRepeatedLines;
+    m_edgeEmphasis = p.edgeEmphasis;
+    m_threadColor = p.threadColor;
+    m_backgroundColor = p.backgroundColor;
+    emit layoutChanged();
+    emit settingsChanged();
+    emit toneChanged();
+    emit geometryChanged();
+    emit renderStyleChanged();
+}
+
+sa::RenderStyle ProjectController::renderStyle() const
+{
+    sa::RenderStyle style;
+    style.threadWidth = m_threadWidth;
+    style.opacity = static_cast<float>(m_opacity);
+    style.background = m_backgroundColor;
+    style.thread = m_threadColor;
+    return style;
+}
+
+// ------------------------------------------------------------------ images
 
 bool ProjectController::loadImage(const QUrl &url)
 {
@@ -40,40 +210,86 @@ bool ProjectController::loadImage(const QUrl &url)
         setStatus(tr("Cancel the running optimization before loading a new image."));
         return false;
     }
-    const QString path = url.isLocalFile() ? url.toLocalFile() : url.toString();
-    QImageReader reader(path);
-    reader.setAutoTransform(true);
-    QImage image = reader.read();
-    if (image.isNull()) {
-        setStatus(tr("Cannot open %1: %2").arg(QFileInfo(path).fileName(), reader.errorString()));
+    const QString path = localPath(url);
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        setStatus(tr("Cannot open %1: %2").arg(QFileInfo(path).fileName(), file.errorString()));
         return false;
     }
-    m_original = std::move(image);
-    m_imageName = QFileInfo(path).fileName();
-    const QImage display = m_original.width() > kMaxDisplaySize || m_original.height() > kMaxDisplaySize
-                               ? m_original.scaled(kMaxDisplaySize, kMaxDisplaySize, Qt::KeepAspectRatio,
-                                                   Qt::SmoothTransformation)
-                               : m_original;
-    m_store->set(QStringLiteral("original"), display);
-    ++m_originalRevision;
-
-    m_resultSequence.clear();
-    m_resultLayout.reset();
-    m_store->set(QStringLiteral("result"), QImage());
-    ++m_resultRevision;
-    emit resultRevisionChanged();
-    emit stateChanged();
-
-    updateBase();
-    setStatus(tr("Loaded %1 (%2 x %3).").arg(m_imageName).arg(m_original.width()).arg(m_original.height()));
+    QByteArray bytes = file.readAll();
+    QString error;
+    QImage image = readImage(bytes, &error);
+    if (image.isNull()) {
+        setStatus(tr("Cannot open %1: %2").arg(QFileInfo(path).fileName(), error));
+        return false;
+    }
+    const QSize size = image.size();
+    m_crop = QRectF();
+    m_rotation = 0.0;
+    emit geometryChanged();
+    setImage(std::move(image), std::move(bytes), path);
+    clearResult();
+    setStatus(tr("Loaded %1 (%2 x %3).").arg(m_imageName).arg(size.width()).arg(size.height()));
     return true;
+}
+
+bool ProjectController::setImage(QImage image, QByteArray bytes, const QString &path)
+{
+    m_source = image.width() > kMaxSourceSize || image.height() > kMaxSourceSize
+                   ? image.scaled(kMaxSourceSize, kMaxSourceSize, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+                   : std::move(image);
+    m_sourceBytes = std::move(bytes);
+    m_imagePath = path;
+    m_imageName = QFileInfo(path).fileName();
+    m_baseTimer.stop();
+    updateBase();
+    return !m_source.isNull();
+}
+
+void ProjectController::rotateBy(double degrees)
+{
+    m_rotation = std::remainder(m_rotation + degrees, 360.0);
+    m_crop = QRectF(); // the old crop refers to the previous orientation
+    emit geometryChanged();
+}
+
+void ProjectController::resetCrop()
+{
+    m_crop = QRectF();
+    emit geometryChanged();
+}
+
+QRectF ProjectController::effectiveCrop() const
+{
+    if (m_source.isNull())
+        return {};
+    return sa::ImageProcessor::effectiveCrop(m_rotatedSize, canvasWidth(), canvasHeight(), m_crop);
+}
+
+void ProjectController::scheduleBaseUpdate()
+{
+    if (!m_source.isNull())
+        m_baseTimer.start();
 }
 
 void ProjectController::updateBase()
 {
-    if (m_original.isNull())
+    if (m_source.isNull()) {
+        m_base = {};
+        m_processed = {};
+        m_histogram.clear();
+        m_store->set(QStringLiteral("original"), QImage());
+        m_store->set(QStringLiteral("processed"), QImage());
+        ++m_originalRevision;
+        ++m_processedRevision;
+        emit imagesChanged();
         return;
-    m_base = sa::ImageProcessor::prepareBase(m_original, m_workingSize, m_workingSize);
+    }
+    const QImage rotated = sa::ImageProcessor::rotated(m_source, m_rotation);
+    m_rotatedSize = rotated.size();
+    m_store->set(QStringLiteral("original"), rotated);
+    ++m_originalRevision;
+    m_base = sa::ImageProcessor::prepareBase(rotated, canvasWidth(), canvasHeight(), m_crop, 0.0);
     updateProcessed();
 }
 
@@ -90,55 +306,61 @@ void ProjectController::updateProcessed()
     emit imagesChanged();
 }
 
-QVariantList ProjectController::pinPositions() const
+bool ProjectController::importPins(const QUrl &url)
 {
-    QVariantList positions;
-    if (m_pinCount < sa::PinLayout::kMinPins || m_pinCount > sa::PinLayout::kMaxPins)
-        return positions;
-    const sa::PinLayout layout = sa::PinLayout::circular(m_pinCount, 1000, 1000);
-    positions.reserve(layout.pinCount());
-    for (const sa::Vec2 &p : layout.pins())
-        positions.append(QPointF(p.x / 1000.0, p.y / 1000.0));
-    return positions;
+    if (m_running)
+        return false;
+    const QString path = localPath(url);
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        setStatus(tr("Cannot open %1: %2").arg(QFileInfo(path).fileName(), file.errorString()));
+        return false;
+    }
+    try {
+        std::vector<sa::Vec2> pins = sa::ProjectFile::parsePinCsv(QString::fromUtf8(file.readAll()));
+        sa::PinLayout::custom(pins, 512, 512); // validates geometry
+        m_customPinsMm = std::move(pins);
+    } catch (const std::exception &e) {
+        setStatus(tr("Invalid pin file %1: %2").arg(QFileInfo(path).fileName(), QString::fromUtf8(e.what())));
+        return false;
+    }
+    m_frameShape = Custom;
+    emit layoutChanged();
+    setStatus(tr("Imported %1 pins from %2.").arg(m_customPinsMm.size()).arg(QFileInfo(path).fileName()));
+    return true;
 }
 
-sa::RenderStyle ProjectController::renderStyle() const
-{
-    sa::RenderStyle style;
-    style.threadWidth = m_threadWidth;
-    style.opacity = static_cast<float>(m_opacity);
-    style.background = m_backgroundColor;
-    style.thread = m_threadColor;
-    return style;
-}
+// ------------------------------------------------------------ optimization
 
 void ProjectController::start()
 {
-    if (m_running || m_processed.isNull())
+    if (m_running || m_source.isNull())
         return;
+    if (m_baseTimer.isActive()) {
+        m_baseTimer.stop();
+        updateBase();
+    }
     try {
-        const sa::PinLayout layout = sa::PinLayout::circular(m_pinCount, m_workingSize, m_workingSize, m_diameterMm);
-        sa::OptimizationProblem problem = sa::OptimizationProblem::fromImage(m_processed, layout);
+        const sa::ProjectData settings = currentSettings();
+        const sa::PinLayout layout = sa::PinLayout::fromFrame(settings.frame, settings.workingSize);
+        sa::validateConfig(settings.config, layout.pinCount());
+        sa::OptimizationProblem problem =
+            sa::OptimizationProblem::fromImage(m_processed, layout, settings.edgeEmphasis);
 
-        sa::OptimizationConfig config;
-        config.maxSegments = m_maxSegments;
-        config.minPinSeparation = m_minSeparation;
-        config.startPin = m_startPin;
-        config.threadOpacity = static_cast<float>(m_opacity);
-        config.threadWidth = m_threadWidth;
-        config.maxThreadLengthMm = m_maxLengthM * 1000.0;
-        config.allowRepeatedLines = m_allowRepeats;
-        sa::validateConfig(config, layout.pinCount());
-
+        m_runSettings = settings;
+        m_runSettings.imageData.clear();
         m_resultLayout = layout;
-        m_resultStyle = renderStyle();
+        m_resultTarget = problem.target;
+        m_resultWeights = problem.weights;
         m_resultSequence.clear();
+        m_resultTransmittance.clear();
         m_segments = 0;
-        m_runMaxSegments = m_maxSegments;
+        m_runMaxSegments = settings.config.maxSegments;
         m_error = m_initialError = m_elapsedSeconds = m_threadLengthMm = 0.0;
+        m_stopReason.clear();
         emit progressChanged();
 
-        m_worker->start(std::move(problem), config, m_resultStyle);
+        m_worker->start(std::move(problem), settings.config, renderStyle());
         setState(true, false);
         setStatus(tr("Optimizing..."));
     } catch (const std::exception &e) {
@@ -196,45 +418,66 @@ void ProjectController::onWorkerFinished(bool success)
     }
     if (std::optional<sa::StringArtResult> result = m_worker->takeResult()) {
         const int segmentCount = result->segmentCount();
+        m_stopReason = QString::fromUtf8(sa::toString(result->stopReason));
         m_resultSequence = std::move(result->sequence);
         m_resultTransmittance = std::move(result->transmittance);
         emit stateChanged();
         setStatus(tr("Finished: %1 segments in %2 s (%3).")
                       .arg(segmentCount)
                       .arg(result->elapsedSeconds, 0, 'f', 2)
-                      .arg(QString::fromUtf8(sa::toString(result->stopReason))));
+                      .arg(m_stopReason));
     }
 }
 
-void ProjectController::updateResultImage()
+void ProjectController::updateResultImages()
 {
     if (m_running || !hasResult() || !m_resultLayout)
         return;
-    m_resultStyle.background = m_backgroundColor;
-    m_resultStyle.thread = m_threadColor;
+    const int w = m_resultLayout->canvasWidth();
+    const int h = m_resultLayout->canvasHeight();
     m_store->set(QStringLiteral("result"),
-                 sa::ThreadRenderer::toImage(m_resultTransmittance, m_resultLayout->canvasWidth(),
-                                             m_resultLayout->canvasHeight(), m_resultStyle.background,
-                                             m_resultStyle.thread));
+                 sa::ThreadRenderer::toImage(m_resultTransmittance, w, h, m_backgroundColor, m_threadColor));
+    m_store->set(QStringLiteral("residual"),
+                 sa::ThreadRenderer::residualImage(m_resultTransmittance, m_resultTarget, m_resultWeights, w, h));
     ++m_resultRevision;
     emit resultRevisionChanged();
 }
+
+void ProjectController::clearResult()
+{
+    m_resultSequence.clear();
+    m_resultTransmittance.clear();
+    m_resultLayout.reset();
+    m_resultTarget.clear();
+    m_resultWeights.clear();
+    m_segments = m_runMaxSegments = 0;
+    m_error = m_initialError = m_elapsedSeconds = m_threadLengthMm = 0.0;
+    m_stopReason.clear();
+    m_store->set(QStringLiteral("result"), QImage());
+    m_store->set(QStringLiteral("residual"), QImage());
+    ++m_resultRevision;
+    emit resultRevisionChanged();
+    emit progressChanged();
+    emit stateChanged();
+}
+
+// ------------------------------------------------------------------ export
 
 void ProjectController::exportPng(const QUrl &url)
 {
     if (!hasResult() || m_exporting)
         return;
-    const QString path = url.toLocalFile();
+    const QString path = localPath(url);
     const sa::PinLayout layout = *m_resultLayout;
     const std::vector<int> sequence = m_resultSequence;
-    sa::RenderStyle style = m_resultStyle;
-    style.background = m_backgroundColor;
-    style.thread = m_threadColor;
-    const double scale = static_cast<double>(m_exportSize) / layout.canvasWidth();
+    sa::RenderStyle style = renderStyle();
+    style.threadWidth = m_runSettings.config.threadWidth;
+    style.opacity = m_runSettings.config.threadOpacity;
+    const double scale = static_cast<double>(m_exportSize) / std::max(layout.canvasWidth(), layout.canvasHeight());
 
     m_exporting = true;
     emit stateChanged();
-    setStatus(tr("Rendering %1 x %1 PNG...").arg(m_exportSize));
+    setStatus(tr("Rendering %1 px PNG...").arg(m_exportSize));
     QtConcurrent::run([path, layout, sequence, style, scale] {
         QString error;
         sa::ExportManager::writePng(path, sa::ThreadRenderer::render(layout, sequence, style, scale), &error);
@@ -250,7 +493,7 @@ void ProjectController::exportCsv(const QUrl &url)
 {
     if (!hasResult())
         return;
-    const QString path = url.toLocalFile();
+    const QString path = localPath(url);
     QString error;
     const bool ok = sa::ExportManager::writeCsv(path, *m_resultLayout, m_resultSequence,
                                                 m_csvMillimeters ? sa::LengthUnit::Millimeters
@@ -259,6 +502,128 @@ void ProjectController::exportCsv(const QUrl &url)
     setStatus(ok ? tr("Saved %1 (%2 segments).").arg(path).arg(m_resultSequence.size() - 1)
                  : tr("CSV export failed: %1").arg(error));
 }
+
+void ProjectController::exportSvg(const QUrl &url)
+{
+    if (!hasResult())
+        return;
+    const QString path = localPath(url);
+    sa::RenderStyle style = renderStyle();
+    style.threadWidth = m_runSettings.config.threadWidth;
+    style.opacity = m_runSettings.config.threadOpacity;
+    QString error;
+    const bool ok = sa::ExportManager::writeSvg(path, *m_resultLayout, m_resultSequence, style, true, &error);
+    setStatus(ok ? tr("Saved %1.").arg(path) : tr("SVG export failed: %1").arg(error));
+}
+
+void ProjectController::exportJson(const QUrl &url)
+{
+    const QString path = localPath(url);
+    QString error;
+    bool ok = false;
+    try {
+        ok = sa::ExportManager::writeText(path, sa::ProjectFile::toJson(projectForSaving(), false, true), &error);
+    } catch (const std::exception &e) {
+        error = QString::fromUtf8(e.what());
+    }
+    setStatus(ok ? tr("Saved %1.").arg(path) : tr("JSON export failed: %1").arg(error));
+}
+
+// ---------------------------------------------------------------- projects
+
+bool ProjectController::saveProject(const QUrl &url)
+{
+    if (m_running) {
+        setStatus(tr("Wait for the optimization to finish before saving."));
+        return false;
+    }
+    const QString path = localPath(url);
+    QString error;
+    if (!sa::ExportManager::writeText(path, sa::ProjectFile::toJson(projectForSaving(), true, false), &error)) {
+        setStatus(tr("Saving failed: %1").arg(error));
+        return false;
+    }
+    setStatus(hasResult() ? tr("Saved project %1 with the result and the settings of the last run.").arg(path)
+                          : tr("Saved project %1.").arg(path));
+    return true;
+}
+
+bool ProjectController::openProject(const QUrl &url)
+{
+    if (m_running) {
+        setStatus(tr("Cancel the running optimization before opening a project."));
+        return false;
+    }
+    const QString path = localPath(url);
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        setStatus(tr("Cannot open %1: %2").arg(QFileInfo(path).fileName(), file.errorString()));
+        return false;
+    }
+    sa::ProjectData project;
+    try {
+        project = sa::ProjectFile::fromJson(file.readAll());
+    } catch (const std::exception &e) {
+        setStatus(tr("Cannot open %1: %2").arg(QFileInfo(path).fileName(), QString::fromUtf8(e.what())));
+        return false;
+    }
+
+    // Image: embedded bytes first, then the referenced file.
+    QString imageNote;
+    QByteArray bytes = project.imageData;
+    if (bytes.isEmpty() && !project.imagePath.isEmpty()) {
+        QFile imageFile(project.imagePath);
+        if (imageFile.open(QIODevice::ReadOnly))
+            bytes = imageFile.readAll();
+    }
+    QString imageError;
+    QImage image = bytes.isEmpty() ? QImage() : readImage(bytes, &imageError);
+    if (image.isNull())
+        imageNote = tr(" The input image is not available.");
+
+    clearResult();
+    applySettings(project);
+    if (image.isNull()) {
+        m_source = QImage();
+        m_sourceBytes.clear();
+        m_imagePath = project.imagePath;
+        m_imageName = QFileInfo(project.imagePath).fileName();
+        m_baseTimer.stop();
+        updateBase();
+    } else {
+        setImage(std::move(image), std::move(bytes), project.imagePath);
+    }
+
+    if (project.sequence.size() > 1) {
+        const sa::PinLayout layout = sa::PinLayout::fromFrame(project.frame, project.workingSize);
+        m_runSettings = project;
+        m_runSettings.imageData.clear();
+        m_resultLayout = layout;
+        m_resultSequence = project.sequence;
+        m_resultTransmittance = sa::ThreadRenderer::renderTransmittance(
+            layout, m_resultSequence, project.config.threadWidth, project.config.threadOpacity);
+        if (m_processed.width == layout.canvasWidth() && m_processed.height == layout.canvasHeight()) {
+            const sa::OptimizationProblem problem =
+                sa::OptimizationProblem::fromImage(m_processed, layout, project.edgeEmphasis);
+            m_resultTarget = problem.target;
+            m_resultWeights = problem.weights;
+        }
+        m_segments = static_cast<int>(m_resultSequence.size()) - 1;
+        m_runMaxSegments = project.config.maxSegments;
+        m_error = project.finalError;
+        m_initialError = project.initialError;
+        m_threadLengthMm = project.threadLengthMm;
+        m_elapsedSeconds = project.elapsedSeconds;
+        m_stopReason = project.stopReason;
+        emit progressChanged();
+        emit stateChanged();
+        updateResultImages();
+    }
+    setStatus(tr("Opened %1.").arg(QFileInfo(path).fileName()) + imageNote);
+    return true;
+}
+
+// ------------------------------------------------------------------- state
 
 void ProjectController::setStatus(const QString &text)
 {

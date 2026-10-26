@@ -34,6 +34,9 @@ ApplicationWindow {
             Layout.preferredWidth: 330
             Layout.fillHeight: true
             onOpenRequested: openDialog.open()
+            onOpenProjectRequested: openProjectDialog.open()
+            onSaveProjectRequested: saveProjectDialog.open()
+            onImportPinsRequested: pinsDialog.open()
         }
 
         ImagePanel {
@@ -48,6 +51,8 @@ ApplicationWindow {
             Layout.fillHeight: true
             onExportPngRequested: pngDialog.open()
             onExportCsvRequested: csvDialog.open()
+            onExportSvgRequested: svgDialog.open()
+            onExportJsonRequested: jsonDialog.open()
         }
     }
 
@@ -82,6 +87,47 @@ ApplicationWindow {
         title: qsTr("Open image")
         nameFilters: [qsTr("Images (*.png *.jpg *.jpeg *.bmp *.webp)"), qsTr("All files (*)")]
         onAccepted: window.controller.loadImage(selectedFile)
+    }
+
+    FileDialog {
+        id: openProjectDialog
+        title: qsTr("Open project")
+        nameFilters: [qsTr("String Art Studio project (*.sasproj)"), qsTr("JSON (*.json)"), qsTr("All files (*)")]
+        onAccepted: window.controller.openProject(selectedFile)
+    }
+
+    FileDialog {
+        id: saveProjectDialog
+        title: qsTr("Save project")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "sasproj"
+        nameFilters: [qsTr("String Art Studio project (*.sasproj)")]
+        onAccepted: window.controller.saveProject(selectedFile)
+    }
+
+    FileDialog {
+        id: pinsDialog
+        title: qsTr("Import pin positions (x, y in mm)")
+        nameFilters: [qsTr("CSV (*.csv *.txt)"), qsTr("All files (*)")]
+        onAccepted: window.controller.importPins(selectedFile)
+    }
+
+    FileDialog {
+        id: svgDialog
+        title: qsTr("Export SVG")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "svg"
+        nameFilters: [qsTr("SVG image (*.svg)")]
+        onAccepted: window.controller.exportSvg(selectedFile)
+    }
+
+    FileDialog {
+        id: jsonDialog
+        title: qsTr("Export JSON")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "json"
+        nameFilters: [qsTr("JSON (*.json)")]
+        onAccepted: window.controller.exportJson(selectedFile)
     }
 
     FileDialog {

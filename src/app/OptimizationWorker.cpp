@@ -74,10 +74,14 @@ QString OptimizationWorker::errorMessage() const
     return m_error;
 }
 
-void OptimizationWorker::publishPreview(const sa::OptimizationProgress &progress, const sa::RenderStyle &style)
+void OptimizationWorker::publishPreview(const sa::OptimizationProgress &progress, const sa::RenderStyle &style,
+                                        const sa::OptimizationProblem &problem)
 {
     m_store->set(QStringLiteral("result"), sa::ThreadRenderer::toImage(progress.transmittance, progress.width,
                                                                        progress.height, style.background, style.thread));
+    m_store->set(QStringLiteral("residual"),
+                 sa::ThreadRenderer::residualImage(progress.transmittance, problem.target, problem.weights,
+                                                   progress.width, progress.height));
     {
         const std::lock_guard lock(m_mutex);
         m_snapshot.segments = progress.segments;
@@ -100,12 +104,12 @@ void OptimizationWorker::run(std::stop_token stop, const sa::OptimizationProblem
         const auto now = Clock::now();
         if (now - lastPreview >= std::chrono::milliseconds(kPreviewIntervalMs)) {
             lastPreview = now;
-            publishPreview(progress, style);
+            publishPreview(progress, style, problem);
         }
         std::unique_lock lock(m_mutex);
         if (m_paused) {
             lock.unlock();
-            publishPreview(progress, style); // show the exact paused state
+            publishPreview(progress, style, problem); // show the exact paused state
             lock.lock();
             m_resumed.wait(lock, stop, [this] { return !m_paused; });
         }
@@ -117,6 +121,9 @@ void OptimizationWorker::run(std::stop_token stop, const sa::OptimizationProblem
         m_store->set(QStringLiteral("result"), sa::ThreadRenderer::toImage(result.transmittance, result.width,
                                                                            result.height, style.background,
                                                                            style.thread));
+        m_store->set(QStringLiteral("residual"),
+                     sa::ThreadRenderer::residualImage(result.transmittance, problem.target, problem.weights,
+                                                       result.width, result.height));
         {
             const std::lock_guard lock(m_mutex);
             m_snapshot.segments = result.segmentCount();

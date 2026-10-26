@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/PinGeometry.h"
+#include "core/ThreadRenderer.h"
 
 #include <QImage>
 #include <QString>
@@ -23,6 +24,21 @@ public:
 
     static bool writeCsv(const QString &path, const PinLayout &layout, std::span<const int> sequence,
                          LengthUnit unit, QString *errorMessage = nullptr);
+
+    // SVG in millimetres (viewBox = physical frame size): background, one
+    // <line> per segment and optionally the pins. Each segment is a separate
+    // element with stroke-opacity = thread opacity, so overlaps compound
+    // multiplicatively as in the compositing model; viewers composite in
+    // sRGB rather than linear light, so mid-tones look slightly darker than
+    // the PNG render.
+    [[nodiscard]] static QString svgText(const PinLayout &layout, std::span<const int> sequence,
+                                         const RenderStyle &style, bool includePins = true);
+
+    static bool writeSvg(const QString &path, const PinLayout &layout, std::span<const int> sequence,
+                         const RenderStyle &style, bool includePins = true, QString *errorMessage = nullptr);
+
+    // Writes text atomically (QSaveFile).
+    static bool writeText(const QString &path, const QByteArray &data, QString *errorMessage = nullptr);
 
     static bool writePng(const QString &path, const QImage &image, QString *errorMessage = nullptr);
 };

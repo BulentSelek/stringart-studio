@@ -17,9 +17,9 @@
 class ImageStore;
 
 // Runs the greedy optimizer on a dedicated std::jthread. The GUI thread only
-// receives throttled notifications: the worker renders a preview at most
-// every kPreviewIntervalMs into the shared ImageStore and emits progressed();
-// the controller then reads snapshot(). Pausing blocks inside the progress
+// receives throttled notifications: at most every kPreviewIntervalMs the
+// worker renders the thread image and the residual map into the shared
+// ImageStore and emits progressed(); the controller then reads snapshot(). Pausing blocks inside the progress
 // callback; cancelling requests a stop on the thread's stop_token.
 class OptimizationWorker final : public QObject
 {
@@ -59,7 +59,8 @@ signals:
 private:
     void run(std::stop_token stop, const sa::OptimizationProblem &problem, const sa::OptimizationConfig &config,
              const sa::RenderStyle &style);
-    void publishPreview(const sa::OptimizationProgress &progress, const sa::RenderStyle &style);
+    void publishPreview(const sa::OptimizationProgress &progress, const sa::RenderStyle &style,
+                        const sa::OptimizationProblem &problem);
 
     std::shared_ptr<ImageStore> m_store;
     mutable std::mutex m_mutex;

@@ -17,6 +17,7 @@ stringart_add_test(tst_geometry)
 stringart_add_test(tst_imageprocessor)
 stringart_add_test(tst_optimizer)
 stringart_add_test(tst_export)
+stringart_add_test(tst_project)
 
 if(STRINGART_BUILD_APP)
     stringart_add_test(tst_ui)

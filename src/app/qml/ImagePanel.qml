@@ -7,12 +7,16 @@ import QtQuick.Layouts
 
 import StringArtStudio
 
-// Centre panel: original / processed / result views with zoom, pan and an
-// optional pin overlay.
+// Centre panel: original (with crop frame) / processed / result / residual
+// views with zoom, pan and an optional pin overlay.
 Pane {
     id: root
 
     required property ProjectController controller
+
+    readonly property int originalTab: 0
+    readonly property int resultTab: 2
+    readonly property int residualTab: 3
 
     padding: 0
     Material.background: "#1b1b1f"
@@ -21,9 +25,13 @@ Pane {
         switch (tabs.currentIndex) {
         case 0: return "image://studio/original/" + root.controller.originalRevision
         case 1: return "image://studio/processed/" + root.controller.processedRevision
-        default: return "image://studio/result/" + root.controller.resultRevision
+        case 2: return "image://studio/result/" + root.controller.resultRevision
+        default: return "image://studio/residual/" + root.controller.resultRevision
         }
     }
+    readonly property bool imageAvailable: tabs.currentIndex < root.resultTab ? root.controller.hasImage
+                                                                              : root.controller.hasResult
+                                                                                || root.controller.running
 
     ColumnLayout {
         anchors.fill: parent
@@ -40,19 +48,20 @@ Pane {
                 TabButton { text: qsTr("Original") }
                 TabButton { text: qsTr("Processed") }
                 TabButton { text: qsTr("String art") }
+                TabButton { text: qsTr("Residual") }
 
                 Connections {
                     target: root.controller
                     function onStateChanged() {
-                        if (root.controller.running)
-                            tabs.currentIndex = 2
+                        if (root.controller.running && tabs.currentIndex < root.resultTab)
+                            tabs.currentIndex = root.resultTab
                     }
                 }
             }
             CheckBox {
                 id: pinToggle
                 text: qsTr("Pins")
-                enabled: tabs.currentIndex !== 0
+                enabled: tabs.currentIndex !== root.originalTab
             }
             Button {
                 text: qsTr("Fit")
@@ -90,6 +99,7 @@ Pane {
                 contentWidth: Math.max(width, image.implicitWidth * view.zoom)
                 contentHeight: Math.max(height, image.implicitHeight * view.zoom)
                 boundsBehavior: Flickable.StopAtBounds
+                interactive: !cropFrame.active
                 ScrollBar.horizontal: ScrollBar {}
                 ScrollBar.vertical: ScrollBar {}
 
@@ -102,12 +112,11 @@ Pane {
                         anchors.centerIn: parent
                         width: implicitWidth * view.zoom
                         height: implicitHeight * view.zoom
-                        source: root.controller.hasImage ? root.imageSource : ""
+                        source: root.imageAvailable ? root.imageSource : ""
                         cache: false
                         smooth: view.zoom < 2
                         mipmap: true
                         fillMode: Image.Stretch
-                        // Keep the previous frame while a new revision loads.
                         retainWhileLoading: true
 
                         Canvas {
@@ -118,10 +127,11 @@ Pane {
                             onPositionsChanged: requestPaint()
                             onVisibleChanged: if (visible) requestPaint()
                             onWidthChanged: requestPaint()
+                            onHeightChanged: requestPaint()
                             onPaint: {
                                 const ctx = getContext("2d")
                                 ctx.reset()
-                                if (!positions)
+                                if (!positions || positions.length === 0)
                                     return
                                 const r = Math.max(1.5, Math.min(4, width / positions.length))
                                 const labelEvery = positions.length > 200 ? 50 : 10
@@ -136,6 +146,91 @@ Pane {
                                         const dx = p.x - 0.5, dy = p.y - 0.5
                                         ctx.fillStyle = "#ff9800"
                                         ctx.fillText(i, p.x * width - dx * 40 - 8, p.y * height - dy * 40 + 4)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Crop frame on the original image, aspect locked to the canvas.
+                        Item {
+                            id: cropFrame
+                            anchors.fill: parent
+                            visible: tabs.currentIndex === root.originalTab && root.controller.hasImage
+                                     && image.status === Image.Ready
+                            enabled: !root.controller.running
+                            readonly property bool active: moveArea.pressed || resizeArea.pressed
+                            // Normalized width / height ratio of a crop with the canvas aspect.
+                            readonly property real normalizedAspect: image.implicitHeight > 0
+                                ? (root.controller.canvasWidth / root.controller.canvasHeight)
+                                  * (image.implicitHeight / image.implicitWidth) : 1
+                            property rect crop: root.controller.effectiveCrop
+
+                            function commit() {
+                                root.controller.crop = crop
+                                crop = Qt.binding(() => root.controller.effectiveCrop)
+                            }
+
+                            Rectangle {
+                                id: cropRect
+                                x: cropFrame.crop.x * cropFrame.width
+                                y: cropFrame.crop.y * cropFrame.height
+                                width: cropFrame.crop.width * cropFrame.width
+                                height: cropFrame.crop.height * cropFrame.height
+                                color: "transparent"
+                                border.color: Material.accent
+                                border.width: 2
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    color: "transparent"
+                                    border.color: "#80000000"
+                                    border.width: 1
+                                }
+
+                                MouseArea {
+                                    id: moveArea
+                                    anchors.fill: parent
+                                    cursorShape: Qt.SizeAllCursor
+                                    property point start
+                                    property rect startCrop
+                                    onPressed: mouse => {
+                                        start = mapToItem(cropFrame, mouse.x, mouse.y)
+                                        startCrop = cropFrame.crop
+                                    }
+                                    onPositionChanged: mouse => {
+                                        const p = mapToItem(cropFrame, mouse.x, mouse.y)
+                                        const c = startCrop
+                                        const nx = Math.max(0, Math.min(1 - c.width, c.x + (p.x - start.x) / cropFrame.width))
+                                        const ny = Math.max(0, Math.min(1 - c.height, c.y + (p.y - start.y) / cropFrame.height))
+                                        cropFrame.crop = Qt.rect(nx, ny, c.width, c.height)
+                                    }
+                                    onReleased: cropFrame.commit()
+                                }
+
+                                Rectangle {
+                                    width: 16
+                                    height: 16
+                                    radius: 3
+                                    color: Material.accent
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    anchors.margins: -8
+
+                                    MouseArea {
+                                        id: resizeArea
+                                        anchors.fill: parent
+                                        cursorShape: Qt.SizeFDiagCursor
+                                        onPositionChanged: mouse => {
+                                            const p = mapToItem(cropFrame, mouse.x, mouse.y)
+                                            const c = cropFrame.crop
+                                            const a = cropFrame.normalizedAspect
+                                            // Width from the pointer, limited by the image bounds.
+                                            let w = Math.max(0.05, p.x / cropFrame.width - c.x)
+                                            w = Math.min(w, 1 - c.x, (1 - c.y) * a)
+                                            cropFrame.crop = Qt.rect(c.x, c.y, w, w / a)
+                                        }
+                                        onReleased: cropFrame.commit()
                                     }
                                 }
                             }
@@ -162,18 +257,34 @@ Pane {
 
             Label {
                 anchors.centerIn: parent
-                visible: !root.controller.hasImage
+                visible: !root.controller.hasImage && !root.imageAvailable
                 text: qsTr("Open or drop a photo to start")
                 font.pixelSize: 22
                 opacity: 0.5
             }
             Label {
                 anchors.centerIn: parent
-                visible: root.controller.hasImage && tabs.currentIndex === 2
+                visible: root.controller.hasImage && tabs.currentIndex >= root.resultTab
                          && !root.controller.running && !root.controller.hasResult
                 text: qsTr("Press Start to generate string art")
                 font.pixelSize: 20
                 opacity: 0.5
+            }
+
+            Pane {
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                anchors.margins: 12
+                visible: tabs.currentIndex === root.residualTab && root.imageAvailable
+                opacity: 0.9
+                padding: 8
+                RowLayout {
+                    spacing: 12
+                    Rectangle { width: 14; height: 14; color: "#ff4040" }
+                    Label { text: qsTr("lighter than target (needs thread)") }
+                    Rectangle { width: 14; height: 14; color: "#4040ff" }
+                    Label { text: qsTr("darker than target") }
+                }
             }
         }
     }

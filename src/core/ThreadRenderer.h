@@ -39,6 +39,12 @@ public:
     [[nodiscard]] static QImage toImage(std::span<const float> transmittance, int width, int height,
                                         const QColor &background = Qt::white, const QColor &thread = Qt::black);
 
+    // Signed residual enc(T) - target as a diverging map: red where the
+    // result is lighter than the target (more thread needed), blue where it
+    // is darker, white where they match, gray where weight is zero.
+    [[nodiscard]] static QImage residualImage(std::span<const float> transmittance, std::span<const float> target,
+                                              std::span<const float> weights, int width, int height);
+
     [[nodiscard]] static QImage render(const PinLayout &layout, std::span<const int> sequence, const RenderStyle &style,
                                        double scale = 1.0, std::size_t segmentLimit = kAllSegments);
 };

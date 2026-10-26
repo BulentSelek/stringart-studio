@@ -22,6 +22,9 @@ private slots:
     void transparentFlattensToWhite();
     void histogram();
     void nullInput();
+    void rotation();
+    void effectiveCropKeepsAspect();
+    void nonSquareOutput();
 };
 
 void TestImageProcessor::grayLevels()
@@ -128,6 +131,54 @@ void TestImageProcessor::nullInput()
 {
     QVERIFY(ImageProcessor::prepareBase(QImage(), 16, 16).isNull());
     QVERIFY(ImageProcessor::toQImage(GrayImage()).isNull());
+}
+
+void TestImageProcessor::rotation()
+{
+    // Black left half: after a 180 degree turn the right half is black.
+    QImage image(40, 40, QImage::Format_RGB32);
+    image.fill(Qt::white);
+    for (int y = 0; y < 40; ++y)
+        for (int x = 0; x < 20; ++x)
+            image.setPixel(x, y, qRgb(0, 0, 0));
+    const GrayImage turned = ImageProcessor::prepareBase(image, 40, 40, {}, 180.0);
+    QVERIFY(turned.at(35, 20) < 0.05f);
+    QVERIFY(turned.at(5, 20) > 0.95f);
+    // 90 degrees clockwise: the black left half moves to the top.
+    const GrayImage quarter = ImageProcessor::prepareBase(image, 40, 40, {}, 90.0);
+    QVERIFY(quarter.at(20, 5) < 0.05f);
+    QVERIFY(quarter.at(20, 35) > 0.95f);
+    // 45 degrees expands the canvas; uncovered corners are white.
+    const QImage rotated = ImageProcessor::rotated(image, 45.0);
+    QVERIFY(rotated.width() > 50);
+    const GrayImage diagonal = ImageProcessor::prepareBase(image, 56, 56, {}, 45.0);
+    QVERIFY(diagonal.at(0, 0) > 0.95f);
+    QCOMPARE(ImageProcessor::rotated(image, 360.0), image);
+}
+
+void TestImageProcessor::effectiveCropKeepsAspect()
+{
+    // Requested 0.5 x 0.5 region of a 400 x 200 image is 200 x 100 px; a
+    // square output takes the centred 100 x 100 part of it.
+    const QRectF crop = ImageProcessor::effectiveCrop(QSize(400, 200), 64, 64, QRectF(0.0, 0.0, 0.5, 0.5));
+    QVERIFY(std::abs(crop.width() * 400 - 100.0) < 1e-9);
+    QVERIFY(std::abs(crop.height() * 200 - 100.0) < 1e-9);
+    QVERIFY(std::abs(crop.center().x() - 0.25) < 1e-9);
+    QVERIFY(std::abs(crop.center().y() - 0.25) < 1e-9);
+    // Empty crop: whole image, aspect-fitted.
+    const QRectF automatic = ImageProcessor::effectiveCrop(QSize(400, 200), 100, 50, {});
+    QCOMPARE(automatic, QRectF(0, 0, 1, 1));
+    // Crop outside the image falls back to the whole image.
+    const QRectF outside = ImageProcessor::effectiveCrop(QSize(100, 100), 10, 10, QRectF(2, 2, 1, 1));
+    QCOMPARE(outside, QRectF(0, 0, 1, 1));
+}
+
+void TestImageProcessor::nonSquareOutput()
+{
+    const GrayImage out = ImageProcessor::prepareBase(synthetic::portrait(300), 120, 60);
+    QCOMPARE(out.width, 120);
+    QCOMPARE(out.height, 60);
+    QCOMPARE(out.pixels.size(), std::size_t{7200});
 }
 
 QTEST_GUILESS_MAIN(TestImageProcessor)

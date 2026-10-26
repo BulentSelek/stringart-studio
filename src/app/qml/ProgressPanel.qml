@@ -14,6 +14,8 @@ Pane {
 
     signal exportPngRequested()
     signal exportCsvRequested()
+    signal exportSvgRequested()
+    signal exportJsonRequested()
 
     Material.elevation: 2
 
@@ -150,6 +152,24 @@ Pane {
             enabled: root.controller.hasResult && !root.controller.running
             Layout.fillWidth: true
             onClicked: root.exportCsvRequested()
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Button {
+                text: qsTr("SVG…")
+                enabled: root.controller.hasResult && !root.controller.running
+                Layout.fillWidth: true
+                Layout.preferredWidth: 1
+                onClicked: root.exportSvgRequested()
+            }
+            Button {
+                text: qsTr("JSON…")
+                enabled: !root.controller.running
+                Layout.fillWidth: true
+                Layout.preferredWidth: 1
+                onClicked: root.exportJsonRequested()
+            }
         }
 
         Item { Layout.fillHeight: true }

@@ -9,6 +9,7 @@
 #include <QTest>
 
 #include <algorithm>
+#include <numbers>
 #include <cmath>
 #include <set>
 #include <stdexcept>
@@ -102,6 +103,8 @@ private slots:
     void insufficientConnections();
     void invalidConfiguration();
     void reconstructsSyntheticDisk();
+    void nonCircularLayouts();
+    void edgeEmphasisWeights();
 };
 
 void TestOptimizer::incrementalScoreMatchesBruteForce()
@@ -381,6 +384,61 @@ void TestOptimizer::reconstructsSyntheticDisk()
     }
     QVERIFY2(inside / nInside < 0.5 * (outside / nOutside),
              qPrintable(QStringLiteral("inside %1 outside %2").arg(inside / nInside).arg(outside / nOutside)));
+}
+
+void TestOptimizer::nonCircularLayouts()
+{
+    for (PinLayoutKind kind : {PinLayoutKind::Elliptical, PinLayoutKind::Rectangular, PinLayoutKind::Custom}) {
+        FrameSpec frame;
+        frame.kind = kind;
+        frame.pinCount = 120;
+        frame.widthMm = 600;
+        frame.heightMm = 400;
+        if (kind == PinLayoutKind::Custom) {
+            for (int i = 0; i < 90; ++i) { // a hexagon-like ring
+                const double a = 2.0 * std::numbers::pi * i / 90;
+                const double r = 200.0 + 30.0 * std::cos(6.0 * a);
+                frame.customPinsMm.push_back({r * std::cos(a), r * std::sin(a)});
+            }
+        }
+        const PinLayout pins = PinLayout::fromFrame(frame, 128);
+        const GrayImage gray =
+            ImageProcessor::prepareBase(synthetic::portrait(256), pins.canvasWidth(), pins.canvasHeight());
+        const OptimizationProblem problem = OptimizationProblem::fromImage(gray, pins);
+        OptimizationConfig config;
+        config.maxSegments = 400;
+        config.minPinSeparation = 8;
+        GreedyOptimizer optimizer;
+        const StringArtResult result = optimizer.optimize(problem, config);
+        QVERIFY(result.segmentCount() > 50);
+        QVERIFY(result.finalError < result.initialError);
+        for (std::size_t i = 0; i + 1 < result.sequence.size(); ++i) {
+            QVERIFY(pins.separation(result.sequence[i], result.sequence[i + 1]) >= 8);
+            QVERIFY(pins.canConnect(result.sequence[i], result.sequence[i + 1]));
+        }
+        const std::vector<float> rendered =
+            ThreadRenderer::renderTransmittance(pins, result.sequence, config.threadWidth, config.threadOpacity);
+        QCOMPARE(rendered, result.transmittance);
+    }
+}
+
+void TestOptimizer::edgeEmphasisWeights()
+{
+    const GrayImage gray = ImageProcessor::prepareBase(synthetic::disk(128), 64, 64);
+    const PinLayout pins = PinLayout::circular(60, 64, 64);
+    const OptimizationProblem plain = OptimizationProblem::fromImage(gray, pins, 0.0);
+    const OptimizationProblem edges = OptimizationProblem::fromImage(gray, pins, 3.0);
+    const std::vector<float> strength = OptimizationProblem::edgeStrength(gray);
+    // Flat regions keep weight 1; the disk outline (radius ~12.8 px) gets up to 1 + 3.
+    QCOMPARE(edges.weights[32 * 64 + 32], 1.0f);
+    float maxWeight = 0.0f;
+    for (std::size_t i = 0; i < edges.weights.size(); ++i) {
+        QCOMPARE(edges.weights[i], plain.weights[i] * (1.0f + 3.0f * strength[i]));
+        QVERIFY(strength[i] >= 0.0f && strength[i] <= 1.0f);
+        maxWeight = std::max(maxWeight, edges.weights[i]);
+    }
+    QCOMPARE(maxWeight, 4.0f);
+    QVERIFY_THROWS_EXCEPTION(std::invalid_argument, OptimizationProblem::fromImage(gray, pins, -1.0));
 }
 
 QTEST_GUILESS_MAIN(TestOptimizer)

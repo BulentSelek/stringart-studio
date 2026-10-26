@@ -13,6 +13,9 @@ Pane {
     required property ProjectController controller
 
     signal openRequested()
+    signal openProjectRequested()
+    signal saveProjectRequested()
+    signal importPinsRequested()
 
     Material.elevation: 2
     padding: 0
@@ -23,6 +26,13 @@ Pane {
         font.pixelSize: 12
         color: Material.accent
         topPadding: 14
+    }
+
+    component Hint: Label {
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        opacity: 0.6
+        font.pixelSize: 11
     }
 
     component IntField: RowLayout {
@@ -76,6 +86,22 @@ Pane {
                     Layout.fillWidth: true
                     onClicked: root.openRequested()
                 }
+                RowLayout {
+                    Layout.fillWidth: true
+                    enabled: !root.controller.running
+                    Button {
+                        text: qsTr("Open project…")
+                        flat: true
+                        Layout.fillWidth: true
+                        onClicked: root.openProjectRequested()
+                    }
+                    Button {
+                        text: qsTr("Save project…")
+                        flat: true
+                        Layout.fillWidth: true
+                        onClicked: root.saveProjectRequested()
+                    }
+                }
 
                 SectionLabel { text: qsTr("Preprocessing") }
 
@@ -105,6 +131,36 @@ Pane {
                     checked: root.controller.invert
                     onToggled: root.controller.invert = checked
                 }
+                ParamSlider {
+                    Layout.fillWidth: true
+                    label: qsTr("Rotation")
+                    from: -180; to: 180; stepSize: 0.5
+                    decimals: 1
+                    suffix: "°"
+                    value: root.controller.rotation
+                    onMoved: v => root.controller.rotation = v
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button {
+                        text: qsTr("⟲ 90°")
+                        flat: true
+                        onClicked: root.controller.rotateBy(-90)
+                    }
+                    Button {
+                        text: qsTr("⟳ 90°")
+                        flat: true
+                        onClicked: root.controller.rotateBy(90)
+                    }
+                    Item { Layout.fillWidth: true }
+                    Button {
+                        text: qsTr("Reset crop")
+                        flat: true
+                        enabled: root.controller.crop.width > 0
+                        onClicked: root.controller.resetCrop()
+                    }
+                }
+                Hint { text: qsTr("Drag or resize the crop frame on the Original tab.") }
 
                 Canvas {
                     id: histogram
@@ -132,35 +188,86 @@ Pane {
                     }
                 }
 
-                SectionLabel { text: qsTr("Pins (circular)") }
+                SectionLabel { text: qsTr("Frame and pins") }
 
+                RowLayout {
+                    Layout.fillWidth: true
+                    enabled: !root.controller.running
+                    Label {
+                        text: qsTr("Shape")
+                        opacity: 0.8
+                        Layout.fillWidth: true
+                    }
+                    ComboBox {
+                        model: [qsTr("Circle"), qsTr("Ellipse"), qsTr("Rectangle"), qsTr("Custom (CSV)")]
+                        currentIndex: root.controller.frameShape
+                        onActivated: index => {
+                            if (index === ProjectController.Custom && root.controller.customPinCount === 0)
+                                root.importPinsRequested()
+                            else
+                                root.controller.frameShape = index
+                        }
+                        Layout.preferredWidth: 150
+                    }
+                }
                 IntField {
+                    visible: root.controller.frameShape !== ProjectController.Custom
                     label: qsTr("Pin count")
                     from: 3; to: 2000
                     value: root.controller.pinCount
                     enabled: !root.controller.running
                     onModified: v => root.controller.pinCount = v
                 }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: root.controller.frameShape === ProjectController.Custom
+                    Label {
+                        text: qsTr("%1 pins imported").arg(root.controller.customPinCount)
+                        opacity: 0.8
+                        Layout.fillWidth: true
+                    }
+                    Button {
+                        text: qsTr("Import CSV…")
+                        enabled: !root.controller.running
+                        onClicked: root.importPinsRequested()
+                    }
+                }
+                IntField {
+                    visible: root.controller.frameShape !== ProjectController.Custom
+                    label: root.controller.frameShape === ProjectController.Circle ? qsTr("Diameter (mm)")
+                                                                                   : qsTr("Width (mm)")
+                    from: 50; to: 5000; stepSize: 10
+                    value: Math.round(root.controller.frameWidthMm)
+                    enabled: !root.controller.running
+                    onModified: v => root.controller.frameWidthMm = v
+                }
+                IntField {
+                    visible: root.controller.frameShape === ProjectController.Ellipse
+                             || root.controller.frameShape === ProjectController.Rectangle
+                    label: qsTr("Height (mm)")
+                    from: 50; to: 5000; stepSize: 10
+                    value: Math.round(root.controller.frameHeightMm)
+                    enabled: !root.controller.running
+                    onModified: v => root.controller.frameHeightMm = v
+                }
                 IntField {
                     label: qsTr("Min. separation")
-                    from: 1; to: Math.max(1, Math.floor(root.controller.pinCount / 2))
+                    from: 1; to: 1000
                     value: root.controller.minSeparation
                     enabled: !root.controller.running
                     onModified: v => root.controller.minSeparation = v
                 }
                 IntField {
                     label: qsTr("Start pin")
-                    from: 0; to: Math.max(0, root.controller.pinCount - 1)
+                    from: 0; to: 19999
                     value: root.controller.startPin
                     enabled: !root.controller.running
                     onModified: v => root.controller.startPin = v
                 }
-                IntField {
-                    label: qsTr("Diameter (mm)")
-                    from: 50; to: 3000; stepSize: 10
-                    value: Math.round(root.controller.diameterMm)
-                    enabled: !root.controller.running
-                    onModified: v => root.controller.diameterMm = v
+                Hint {
+                    text: qsTr("Canvas %1 × %2 px · %3 mm per px")
+                          .arg(root.controller.canvasWidth).arg(root.controller.canvasHeight)
+                          .arg(root.controller.mmPerPixel.toFixed(3))
                 }
 
                 SectionLabel { text: qsTr("Optimization") }
@@ -202,6 +309,16 @@ Pane {
                     enabled: !root.controller.running
                     onToggled: root.controller.allowRepeats = checked
                 }
+                ParamSlider {
+                    Layout.fillWidth: true
+                    enabled: !root.controller.running
+                    label: qsTr("Edge emphasis")
+                    from: 0; to: 5; stepSize: 0.1
+                    decimals: 1
+                    value: root.controller.edgeEmphasis
+                    onMoved: v => root.controller.edgeEmphasis = v
+                }
+                Hint { text: qsTr("Weights contours and features higher in the error, so more thread goes to eyes, mouth and outlines.") }
 
                 SectionLabel { text: qsTr("Thread") }
 
@@ -222,6 +339,11 @@ Pane {
                     suffix: " px"
                     value: root.controller.threadWidth
                     onMoved: v => root.controller.threadWidth = v
+                }
+                Hint {
+                    text: qsTr("≈ opaque thread of %1 mm diameter on this frame")
+                          .arg((root.controller.opacity * root.controller.threadWidth
+                                * root.controller.mmPerPixel).toFixed(2))
                 }
                 RowLayout {
                     Layout.fillWidth: true
@@ -246,13 +368,7 @@ Pane {
                         }
                     }
                 }
-                Label {
-                    Layout.fillWidth: true
-                    wrapMode: Text.WordWrap
-                    opacity: 0.6
-                    font.pixelSize: 11
-                    text: qsTr("Colours change the preview only. The optimizer always fits thread darkness to image luminance; for light-on-dark, enable Invert.")
-                }
+                Hint { text: qsTr("Colours change the preview only. The optimizer always fits thread darkness to image luminance; for light-on-dark, enable Invert.") }
 
                 Item { Layout.preferredHeight: 12 }
             }

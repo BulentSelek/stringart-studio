@@ -146,7 +146,7 @@ StringArtResult GreedyOptimizer::optimize(const OptimizationProblem &problem, co
 
         candidates.clear();
         for (int j = 0; j < pinCount; ++j) {
-            if (layout.separation(current, j) < config.minPinSeparation)
+            if (layout.separation(current, j) < config.minPinSeparation || !layout.canConnect(current, j))
                 continue;
             if (!usedPairs.empty() && usedPairs[pairIndex(current, j, pinCount)])
                 continue;

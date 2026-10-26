@@ -24,22 +24,32 @@ struct ToneSettings
 // Non-destructive preprocessing pipeline. The original QImage is never
 // modified; each stage returns a new working image:
 //
-//   original --prepareBase--> base (cropped, resampled, grayscale)
-//            --applyTone----> working image (display-encoded gray)
-//            --toLinear-----> optimization target (linear transmittance)
+//   original --prepareBase--> base (rotated, cropped, resampled, grayscale)
+//            --applyTone----> working image (display-encoded gray), which is
+//                             the optimization target (OptimizationProblem)
 //
 // prepareBase is the expensive step (resampling a large photo), so callers
 // cache its result and re-run only applyTone when tone settings change.
 class ImageProcessor
 {
 public:
-    // Crops `original` to `normalizedCrop` (in [0,1] image fractions). An
-    // empty crop selects the largest centred region with the output aspect
-    // ratio. The crop is resampled to outWidth x outHeight and converted to
-    // gray using Rec. 709 luminance computed in linear light, then re-encoded
-    // to sRGB. Returns a null image if `original` is null.
+    // Rotates `original` by rotationDegrees (clockwise, canvas expanded, new
+    // corners white), crops it to effectiveCrop(), resamples to
+    // outWidth x outHeight and converts to gray using Rec. 709 luminance
+    // computed in linear light, re-encoded to sRGB. Returns a null image if
+    // `original` is null.
     [[nodiscard]] static GrayImage prepareBase(const QImage &original, int outWidth, int outHeight,
-                                               const QRectF &normalizedCrop = {});
+                                               const QRectF &normalizedCrop = {}, double rotationDegrees = 0.0);
+
+    // Clockwise rotation with an expanded canvas; uncovered areas transparent.
+    [[nodiscard]] static QImage rotated(const QImage &image, double degrees);
+
+    // The crop actually used, in [0,1] fractions of an image of `imageSize`:
+    // the largest rectangle with the output aspect ratio centred inside
+    // `normalizedCrop` (or inside the whole image if it is empty), so the
+    // working image is never distorted.
+    [[nodiscard]] static QRectF effectiveCrop(const QSize &imageSize, int outWidth, int outHeight,
+                                              const QRectF &normalizedCrop);
 
     [[nodiscard]] static GrayImage applyTone(const GrayImage &base, const ToneSettings &tone);
 

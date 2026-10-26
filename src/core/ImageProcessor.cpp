@@ -6,6 +6,8 @@
 #include <array>
 #include <cmath>
 
+#include <QTransform>
+
 namespace sa {
 
 namespace {
@@ -21,40 +23,63 @@ const std::array<float, 256> &srgbToLinearTable()
     return table;
 }
 
-QRect resolveCrop(const QImage &image, int outWidth, int outHeight, const QRectF &normalizedCrop)
+// Largest rectangle with the output aspect ratio, centred inside `area`.
+QRectF fitAspect(const QRectF &area, double aspect)
 {
-    const QRect bounds = image.rect();
-    if (!normalizedCrop.isEmpty()) {
-        const QRectF r(normalizedCrop.x() * bounds.width(), normalizedCrop.y() * bounds.height(),
-                       normalizedCrop.width() * bounds.width(), normalizedCrop.height() * bounds.height());
-        const QRect crop = r.toAlignedRect().intersected(bounds);
-        if (!crop.isEmpty())
-            return crop;
+    double w = area.width();
+    double h = w / aspect;
+    if (h > area.height()) {
+        h = area.height();
+        w = h * aspect;
     }
-    // Largest centred rectangle with the output aspect ratio.
-    const double aspect = static_cast<double>(outWidth) / outHeight;
-    int w = bounds.width();
-    int h = static_cast<int>(std::lround(w / aspect));
-    if (h > bounds.height()) {
-        h = bounds.height();
-        w = static_cast<int>(std::lround(h * aspect));
-    }
-    w = std::clamp(w, 1, bounds.width());
-    h = std::clamp(h, 1, bounds.height());
-    return {(bounds.width() - w) / 2, (bounds.height() - h) / 2, w, h};
+    return {area.center().x() - w / 2.0, area.center().y() - h / 2.0, w, h};
 }
 
 } // namespace
 
+QImage ImageProcessor::rotated(const QImage &image, double degrees)
+{
+    if (image.isNull() || std::abs(std::remainder(degrees, 360.0)) < 1e-9)
+        return image;
+    // Corners uncovered by the rotation become transparent and are flattened
+    // to white in prepareBase.
+    return image.convertToFormat(QImage::Format_ARGB32_Premultiplied)
+        .transformed(QTransform().rotate(degrees), Qt::SmoothTransformation);
+}
+
+QRectF ImageProcessor::effectiveCrop(const QSize &imageSize, int outWidth, int outHeight,
+                                     const QRectF &normalizedCrop)
+{
+    if (imageSize.isEmpty() || outWidth <= 0 || outHeight <= 0)
+        return {};
+    const QRectF bounds(0.0, 0.0, imageSize.width(), imageSize.height());
+    QRectF area = bounds;
+    if (!normalizedCrop.isEmpty()) {
+        const QRectF requested(normalizedCrop.x() * bounds.width(), normalizedCrop.y() * bounds.height(),
+                               normalizedCrop.width() * bounds.width(), normalizedCrop.height() * bounds.height());
+        const QRectF clipped = requested.intersected(bounds);
+        if (!clipped.isEmpty())
+            area = clipped;
+    }
+    const QRectF fitted = fitAspect(area, static_cast<double>(outWidth) / outHeight);
+    return {fitted.x() / bounds.width(), fitted.y() / bounds.height(), fitted.width() / bounds.width(),
+            fitted.height() / bounds.height()};
+}
+
 GrayImage ImageProcessor::prepareBase(const QImage &original, int outWidth, int outHeight,
-                                      const QRectF &normalizedCrop)
+                                      const QRectF &normalizedCrop, double rotationDegrees)
 {
     if (original.isNull() || outWidth <= 0 || outHeight <= 0)
         return {};
 
-    const QRect crop = resolveCrop(original, outWidth, outHeight, normalizedCrop);
+    const QImage source = rotated(original, rotationDegrees);
+    const QRectF n = effectiveCrop(source.size(), outWidth, outHeight, normalizedCrop);
+    const QRect crop = QRectF(n.x() * source.width(), n.y() * source.height(), n.width() * source.width(),
+                              n.height() * source.height())
+                           .toAlignedRect()
+                           .intersected(source.rect());
     // Composite transparent images onto white, the default canvas colour.
-    QImage rgb = original.copy(crop).convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    QImage rgb = source.copy(crop).convertToFormat(QImage::Format_ARGB32_Premultiplied);
     if (rgb.hasAlphaChannel()) {
         QImage flattened(rgb.size(), QImage::Format_RGB32);
         flattened.fill(Qt::white);
