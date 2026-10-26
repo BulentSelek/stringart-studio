@@ -152,6 +152,15 @@ Pane {
                         flat: true
                         onClicked: root.controller.rotateBy(90)
                     }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button {
+                        text: qsTr("Fit whole photo")
+                        flat: true
+                        enabled: root.controller.hasImage
+                        onClicked: root.controller.fitWholeImage()
+                    }
                     Item { Layout.fillWidth: true }
                     Button {
                         text: qsTr("Reset crop")
@@ -160,7 +169,7 @@ Pane {
                         onClicked: root.controller.resetCrop()
                     }
                 }
-                Hint { text: qsTr("Drag or resize the crop frame on the Original tab. For ellipse and rectangle frames the side handles change the frame aspect.") }
+                Hint { text: qsTr("Drag or resize the crop frame on the Original tab; it may extend beyond the photo (padding is empty canvas). Fit whole photo puts the entire photo inside the frame. For ellipse and rectangle frames the side handles change the frame aspect.") }
 
                 Canvas {
                     id: histogram

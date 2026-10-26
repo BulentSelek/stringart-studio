@@ -70,11 +70,22 @@ scaling), gray = Rec. 709 luminance computed in linear light, re-encoded to sRGB
 → `applyTone`: invert, contrast around 0.5, brightness offset, gamma `v^(1/γ)`
 → display-encoded working image `g` in [0, 1].
 
-`prepareBase` first rotates (arbitrary angle, expanded canvas, new corners
-white), then crops. The crop is normalized to the rotated image; the crop
-actually used (`effectiveCrop`) is the largest rectangle with the canvas
-aspect ratio centred in the requested crop, so the working image is never
-distorted. The UI locks the crop frame to that aspect.
+`prepareBase` first rotates (arbitrary angle, expanded canvas), then crops.
+The crop is normalized to the rotated image and may extend beyond it (the
+frame can be larger than the photo); the crop actually used
+(`effectiveCrop`) is the largest rectangle with the canvas aspect ratio
+centred in the requested crop, so the working image is never distorted. A
+crop that does not overlap the image falls back to the whole image.
+
+Padding outside the photo, rotation corners and transparent pixels are
+carried as per-pixel `alpha` and become empty canvas (white target, no
+thread) after the tone curve, so they stay empty even with Invert.
+`containingCrop` computes the smallest centred crop whose frame contains the
+whole photo: for rectangles the bounding box, for circles and ellipses the
+ellipse through the photo's corners (√2 larger for a matching aspect), both
+including the one-pixel pin margin. The UI's corner handle keeps the canvas
+aspect; on ellipse and rectangle frames the side handles change it and set
+the frame height accordingly.
 
 The app works from a copy of the photo limited to 2048 px on the long side
 (working sizes are ≤ 1024 px) so rotation and crop stay interactive; crop,

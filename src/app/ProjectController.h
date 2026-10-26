@@ -103,6 +103,7 @@ public:
     Q_INVOKABLE bool importPins(const QUrl &url);
     Q_INVOKABLE void rotateBy(double degrees);
     Q_INVOKABLE void resetCrop();
+    Q_INVOKABLE void fitWholeImage();
     Q_INVOKABLE void start();
     Q_INVOKABLE void pause();
     Q_INVOKABLE void resume();

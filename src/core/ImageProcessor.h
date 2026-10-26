@@ -33,23 +33,33 @@ struct ToneSettings
 class ImageProcessor
 {
 public:
-    // Rotates `original` by rotationDegrees (clockwise, canvas expanded, new
-    // corners white), crops it to effectiveCrop(), resamples to
-    // outWidth x outHeight and converts to gray using Rec. 709 luminance
-    // computed in linear light, re-encoded to sRGB. Returns a null image if
-    // `original` is null.
+    // Rotates `original` by rotationDegrees (clockwise, canvas expanded),
+    // crops it to effectiveCrop(), resamples to outWidth x outHeight and
+    // converts to gray using Rec. 709 luminance computed in linear light,
+    // re-encoded to sRGB. The crop may extend beyond the image; padding,
+    // rotation corners and transparent pixels are reported in `alpha` and
+    // become empty canvas (white) in applyTone, independent of invert.
+    // Returns a null image if `original` is null.
     [[nodiscard]] static GrayImage prepareBase(const QImage &original, int outWidth, int outHeight,
                                                const QRectF &normalizedCrop = {}, double rotationDegrees = 0.0);
 
     // Clockwise rotation with an expanded canvas; uncovered areas transparent.
     [[nodiscard]] static QImage rotated(const QImage &image, double degrees);
 
-    // The crop actually used, in [0,1] fractions of an image of `imageSize`:
-    // the largest rectangle with the output aspect ratio centred inside
-    // `normalizedCrop` (or inside the whole image if it is empty), so the
-    // working image is never distorted.
+    // The crop actually used, in fractions of an image of `imageSize` (may be
+    // outside [0, 1] when the crop extends beyond the image): the largest
+    // rectangle with the output aspect ratio centred inside `normalizedCrop`,
+    // or inside the whole image if the crop is empty or does not overlap the
+    // image, so the working image is never distorted.
     [[nodiscard]] static QRectF effectiveCrop(const QSize &imageSize, int outWidth, int outHeight,
                                               const QRectF &normalizedCrop);
+
+    // Smallest centred crop with the output aspect ratio whose frame contains
+    // the whole image (the rest is empty canvas). With `elliptical` the frame
+    // is the inscribed ellipse, so the image corners must lie inside it; a
+    // one-pixel pin margin is included.
+    [[nodiscard]] static QRectF containingCrop(const QSize &imageSize, int outWidth, int outHeight,
+                                               bool elliptical = false);
 
     [[nodiscard]] static GrayImage applyTone(const GrayImage &base, const ToneSettings &tone);
 

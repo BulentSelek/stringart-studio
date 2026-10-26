@@ -117,8 +117,17 @@ Pane {
             clip: true
 
             property real zoom: 1.0
+            // Area to show, in fractions of the image: the image itself, plus
+            // the committed crop on the Original tab (it may extend beyond).
+            readonly property bool showCrop: tabs.currentIndex === root.originalTab && root.controller.hasImage
+            readonly property rect crop: root.controller.effectiveCrop
+            readonly property real x0: showCrop ? Math.min(0, crop.x) : 0
+            readonly property real y0: showCrop ? Math.min(0, crop.y) : 0
+            readonly property real x1: showCrop ? Math.max(1, crop.x + crop.width) : 1
+            readonly property real y1: showCrop ? Math.max(1, crop.y + crop.height) : 1
             readonly property real fitZoom: image.implicitWidth > 0
-                ? Math.min(width / image.implicitWidth, height / image.implicitHeight) * 0.95 : 1.0
+                ? Math.min(width / ((x1 - x0) * image.implicitWidth),
+                           height / ((y1 - y0) * image.implicitHeight)) * 0.95 : 1.0
 
             function fit() {
                 zoom = fitZoom
@@ -131,20 +140,32 @@ Pane {
             Flickable {
                 id: flick
                 anchors.fill: parent
-                contentWidth: Math.max(width, image.implicitWidth * view.zoom)
-                contentHeight: Math.max(height, image.implicitHeight * view.zoom)
+                contentWidth: Math.max(width, (view.x1 - view.x0) * image.implicitWidth * view.zoom)
+                contentHeight: Math.max(height, (view.y1 - view.y0) * image.implicitHeight * view.zoom)
                 boundsBehavior: Flickable.StopAtBounds
                 interactive: !cropFrame.active
                 ScrollBar.horizontal: ScrollBar {}
                 ScrollBar.vertical: ScrollBar {}
 
                 Item {
+                    id: content
                     width: flick.contentWidth
                     height: flick.contentHeight
 
+                    // Empty canvas behind the crop: padding beyond the image is white.
+                    Rectangle {
+                        visible: view.showCrop && cropFrame.visible
+                        color: "white"
+                        x: image.x + cropFrame.crop.x * image.width
+                        y: image.y + cropFrame.crop.y * image.height
+                        width: cropFrame.crop.width * image.width
+                        height: cropFrame.crop.height * image.height
+                    }
+
                     Image {
                         id: image
-                        anchors.centerIn: parent
+                        x: (content.width - (view.x1 - view.x0) * width) / 2 - view.x0 * width
+                        y: (content.height - (view.y1 - view.y0) * height) / 2 - view.y0 * height
                         width: implicitWidth * view.zoom
                         height: implicitHeight * view.zoom
                         source: root.imageAvailable ? root.imageSource : ""
@@ -253,8 +274,11 @@ Pane {
                                     onPositionChanged: mouse => {
                                         const p = mapToItem(cropFrame, mouse.x, mouse.y)
                                         const c = startCrop
-                                        const nx = Math.max(0, Math.min(1 - c.width, c.x + (p.x - start.x) / cropFrame.width))
-                                        const ny = Math.max(0, Math.min(1 - c.height, c.y + (p.y - start.y) / cropFrame.height))
+                                        // Keep some overlap with the image; the rest may be padding.
+                                        const nx = Math.max(Math.max(-1, 0.05 - c.width), Math.min(Math.min(2 - c.width, 0.95),
+                                                            c.x + (p.x - start.x) / cropFrame.width))
+                                        const ny = Math.max(Math.max(-1, 0.05 - c.height), Math.min(Math.min(2 - c.height, 0.95),
+                                                            c.y + (p.y - start.y) / cropFrame.height))
                                         cropFrame.crop = Qt.rect(nx, ny, c.width, c.height)
                                     }
                                     onReleased: cropFrame.commit()
@@ -277,9 +301,10 @@ Pane {
                                             const p = mapToItem(cropFrame, mouse.x, mouse.y)
                                             const c = cropFrame.crop
                                             const a = cropFrame.normalizedAspect
-                                            // Width from the pointer, limited by the image bounds.
+                                            // Width from the pointer; the crop may extend up to one
+                                            // image size beyond the right and bottom edges.
                                             let w = Math.max(0.05, p.x / cropFrame.width - c.x)
-                                            w = Math.min(w, 1 - c.x, (1 - c.y) * a)
+                                            w = Math.min(w, 2 - c.x, (2 - c.y) * a)
                                             cropFrame.crop = Qt.rect(c.x, c.y, w, w / a)
                                         }
                                         onReleased: cropFrame.commit()
@@ -303,7 +328,7 @@ Pane {
                                         onPositionChanged: mouse => {
                                             const p = mapToItem(cropFrame, mouse.x, mouse.y)
                                             const c = cropFrame.crop
-                                            const w = Math.max(0.05, Math.min(1 - c.x, p.x / cropFrame.width - c.x))
+                                            const w = Math.max(0.05, Math.min(2 - c.x, p.x / cropFrame.width - c.x))
                                             cropFrame.crop = Qt.rect(c.x, c.y, w, c.height)
                                         }
                                         onReleased: cropFrame.commit()
@@ -327,7 +352,7 @@ Pane {
                                         onPositionChanged: mouse => {
                                             const p = mapToItem(cropFrame, mouse.x, mouse.y)
                                             const c = cropFrame.crop
-                                            const h = Math.max(0.05, Math.min(1 - c.y, p.y / cropFrame.height - c.y))
+                                            const h = Math.max(0.05, Math.min(2 - c.y, p.y / cropFrame.height - c.y))
                                             cropFrame.crop = Qt.rect(c.x, c.y, c.width, h)
                                         }
                                         onReleased: cropFrame.commit()

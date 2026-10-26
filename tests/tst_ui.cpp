@@ -257,6 +257,12 @@ void TestUi::frameOutlineFollowsShape()
         pending.append(item->childItems());
     }
     QVERIFY(tabBar);
+    // Fit the whole photo inside the ellipse: the crop extends beyond the image.
+    m_controller->fitWholeImage();
+    const QRectF whole = m_controller->effectiveCrop();
+    QVERIFY(whole.left() < 0.0 && whole.top() < 0.0 && whole.right() > 1.0 && whole.bottom() > 1.0);
+    QTRY_VERIFY(m_store->get(QStringLiteral("processed")).pixel(5, 5) == qRgb(255, 255, 255));
+
     const QByteArray prefix = qgetenv("STRINGART_UI_SHAPES");
     for (int tab : {0, 1}) {
         tabBar->setProperty("currentIndex", tab);

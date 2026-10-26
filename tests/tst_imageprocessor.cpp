@@ -25,6 +25,8 @@ private slots:
     void rotation();
     void effectiveCropKeepsAspect();
     void nonSquareOutput();
+    void cropBeyondImageIsEmptyCanvas();
+    void containingCrop();
 };
 
 void TestImageProcessor::grayLevels()
@@ -179,6 +181,62 @@ void TestImageProcessor::nonSquareOutput()
     QCOMPARE(out.width, 120);
     QCOMPARE(out.height, 60);
     QCOMPARE(out.pixels.size(), std::size_t{7200});
+}
+
+void TestImageProcessor::cropBeyondImageIsEmptyCanvas()
+{
+    // Black 40 x 40 image; crop twice its size, centred: the image fills the
+    // middle half of a 40 x 40 output, the rest is padding.
+    const QImage black = synthetic::solid(40, 0);
+    const QRectF crop(-0.5, -0.5, 2.0, 2.0);
+    QCOMPARE(ImageProcessor::effectiveCrop(black.size(), 40, 40, crop), crop);
+    const GrayImage base = ImageProcessor::prepareBase(black, 40, 40, crop);
+    QCOMPARE(base.alpha.size(), base.pixels.size());
+    QCOMPARE(base.alpha[0], 0.0f);
+    QCOMPARE(base.alpha[20 * 40 + 20], 1.0f);
+    for (bool invert : {false, true}) {
+        const GrayImage toned = ImageProcessor::applyTone(base, {0.0, 1.0, 1.0, invert});
+        QVERIFY(toned.alpha.empty());
+        QCOMPARE(toned.at(2, 2), 1.0f);   // padding: empty canvas, also when inverted
+        QCOMPARE(toned.at(37, 20), 1.0f);
+        QVERIFY(std::abs(toned.at(20, 20) - (invert ? 1.0f : 0.0f)) < 1e-3f); // image area
+        QVERIFY(toned.at(15, 20) < 0.01f || invert);
+    }
+    // Opaque crops inside the image carry no alpha.
+    QVERIFY(ImageProcessor::prepareBase(black, 20, 20).alpha.empty());
+    // Rotation corners count as empty canvas even when inverted.
+    const GrayImage rotated = ImageProcessor::applyTone(ImageProcessor::prepareBase(black, 56, 56, {}, 45.0),
+                                                        {0.0, 1.0, 1.0, true});
+    QVERIFY(rotated.at(0, 0) > 0.99f);
+    QVERIFY(rotated.at(28, 28) > 0.99f); // inverted black image
+}
+
+void TestImageProcessor::containingCrop()
+{
+    // Rectangle frame: the whole 400 x 200 image fits a 2:1 canvas exactly
+    // (plus the one-pixel pin margin).
+    const QRectF rect = ImageProcessor::containingCrop(QSize(400, 200), 202, 101);
+    QVERIFY(rect.width() >= 1.0 && rect.height() >= 1.0);
+    QVERIFY(std::abs(rect.center().x() - 0.5) < 1e-9 && std::abs(rect.center().y() - 0.5) < 1e-9);
+    QVERIFY(std::abs(rect.width() * 400 / (rect.height() * 200) - 2.0) < 1e-9);
+
+    // Ellipse frame: every image corner lies inside the pin ellipse.
+    for (const QSize size : {QSize(300, 200), QSize(200, 300), QSize(256, 256)}) {
+        const int w = 300;
+        const int h = 400;
+        const QRectF c = ImageProcessor::containingCrop(size, w, h, true);
+        // Image corners in output pixel coordinates.
+        const double sx = w / (c.width() * size.width());
+        const double sy = h / (c.height() * size.height());
+        const double rx = w / 2.0 - 1.0;
+        const double ry = h / 2.0 - 1.0;
+        for (const QPointF corner : {QPointF(0, 0), QPointF(size.width(), size.height())}) {
+            const double x = (corner.x() - c.x() * size.width()) * sx - w / 2.0;
+            const double y = (corner.y() - c.y() * size.height()) * sy - h / 2.0;
+            const double r = (x / rx) * (x / rx) + (y / ry) * (y / ry);
+            QVERIFY2(r <= 1.0 + 1e-9 && r > 0.99, qPrintable(QString::number(r)));
+        }
+    }
 }
 
 QTEST_GUILESS_MAIN(TestImageProcessor)

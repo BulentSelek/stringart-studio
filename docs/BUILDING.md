@@ -30,7 +30,9 @@ executable before distributing.
 
 1. Open an image (button or drag and drop), or open a saved project.
 2. Adjust tone, rotation (slider or ±90°) and the crop frame (drag / resize on
-   the *Original* tab); check the *Processed* tab and histogram.
+   the *Original* tab; it may extend beyond the photo, and **Fit whole photo**
+   puts the entire photo inside the frame); check the *Processed* tab, which
+   shows the frame outline, and the histogram.
 3. Choose the frame (circle, ellipse, rectangle or a custom CSV of pin
    positions in mm), pin count, physical size, minimum separation, working
    size, max segments, edge emphasis, thread opacity and width.

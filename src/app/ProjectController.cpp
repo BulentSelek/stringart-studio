@@ -259,6 +259,15 @@ void ProjectController::resetCrop()
     emit geometryChanged();
 }
 
+void ProjectController::fitWholeImage()
+{
+    if (m_source.isNull())
+        return;
+    const bool elliptical = m_frameShape == Circle || m_frameShape == Ellipse;
+    m_crop = sa::ImageProcessor::containingCrop(m_rotatedSize, canvasWidth(), canvasHeight(), elliptical);
+    emit geometryChanged();
+}
+
 QRectF ProjectController::effectiveCrop() const
 {
     if (m_source.isNull())

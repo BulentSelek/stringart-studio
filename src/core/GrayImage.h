@@ -13,6 +13,10 @@ struct GrayImage
     int width = 0;
     int height = 0;
     std::vector<float> pixels;
+    // Optional per-pixel coverage of the source image in [0, 1]; empty means
+    // fully opaque. Pixels with alpha < 1 are transparent source areas or
+    // padding outside the image and are treated as empty canvas.
+    std::vector<float> alpha;
 
     GrayImage() = default;
     GrayImage(int w, int h, float fill = 0.0f)
