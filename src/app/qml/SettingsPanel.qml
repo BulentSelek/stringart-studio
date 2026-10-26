@@ -18,6 +18,8 @@ Pane {
     readonly property int imageCategory: 0
     readonly property int frameCategory: 1
     property alias currentCategory: categories.currentIndex
+    // Shared width of input controls so their right edges and sizes line up.
+    readonly property int fieldWidth: 150
 
     signal importPinsRequested()
 
@@ -62,7 +64,7 @@ Pane {
             value: field.value
             editable: true
             onValueModified: field.modified(value)
-            Layout.preferredWidth: 140
+            Layout.preferredWidth: root.fieldWidth
         }
     }
 
@@ -82,7 +84,7 @@ Pane {
         }
         ComboBox {
             id: box
-            Layout.preferredWidth: 160
+            Layout.preferredWidth: root.fieldWidth
             onActivated: index => combo.activated(index)
         }
     }
