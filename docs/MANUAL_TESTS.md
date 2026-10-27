@@ -72,6 +72,14 @@ own photos.
       engine, e.g. speech-dispatcher on Linux); Esc returns; reopening the
       project resumes at the same step.
 
+## Undo, presets, runs
+- [ ] Drag a slider, then Ctrl+Z: one step back to the value before the drag;
+      Ctrl+Shift+Z redoes; arrows in the toolbar follow.
+- [ ] *Presets ▾ → Save current parameters as…*, change parameters, pick the
+      preset; restart the app: the preset is still listed; delete it.
+- [ ] Run twice with different settings, open *Runs*: two runs side by side,
+      error difference, click thumbnails to pick other runs, *Use settings*.
+
 ## Persistence
 - [ ] Close the app normally, start it again: window size / position (X11;
       Wayland decides positions itself), maximized state, selected parameter

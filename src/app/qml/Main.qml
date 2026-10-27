@@ -93,6 +93,59 @@ ApplicationWindow {
                 text: qsTr("Save project…")
                 onClicked: saveProjectDialog.open()
             }
+            ToolSeparator {}
+            ToolButton {
+                objectName: "undoButton"
+                text: "↶"
+                font.pixelSize: 18
+                enabled: window.controller.canUndo
+                onClicked: window.controller.undo()
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Undo parameter change (Ctrl+Z)")
+            }
+            ToolButton {
+                text: "↷"
+                font.pixelSize: 18
+                enabled: window.controller.canRedo
+                onClicked: window.controller.redo()
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Redo (Ctrl+Shift+Z)")
+            }
+            ToolButton {
+                id: presetsButton
+                objectName: "presetsButton"
+                text: qsTr("Presets ▾")
+                onClicked: presetsMenu.popup(presetsButton, 0, presetsButton.height)
+
+                Menu {
+                    id: presetsMenu
+                    MenuItem {
+                        text: qsTr("Save current parameters as…")
+                        onTriggered: presetDialog.open()
+                    }
+                    MenuSeparator { visible: window.controller.presetNames.length > 0 }
+                    Repeater {
+                        model: window.controller.presetNames
+                        delegate: MenuItem {
+                            required property string modelData
+                            text: modelData
+                            onTriggered: window.controller.loadPreset(modelData)
+                        }
+                    }
+                    Menu {
+                        title: qsTr("Delete preset")
+                        enabled: window.controller.presetNames.length > 0
+                        Repeater {
+                            model: window.controller.presetNames
+                            delegate: MenuItem {
+                                required property string modelData
+                                text: modelData
+                                onTriggered: window.controller.deletePreset(modelData)
+                            }
+                        }
+                    }
+                }
+            }
             Item { Layout.fillWidth: true }
             Label {
                 text: window.controller.imageName
@@ -164,6 +217,43 @@ ApplicationWindow {
     WindingView {
         id: windingView
         controller: window.controller
+    }
+
+    Dialog {
+        id: presetDialog
+        objectName: "presetDialog"
+        title: qsTr("Save preset")
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Save | Dialog.Cancel
+        onOpened: {
+            presetName.text = ""
+            presetName.forceActiveFocus()
+        }
+        onAccepted: window.controller.savePreset(presetName.text)
+        ColumnLayout {
+            Label {
+                text: qsTr("Frame, thread, colour, tone and run parameters (not the crop).")
+                opacity: 0.7
+            }
+            TextField {
+                id: presetName
+                placeholderText: qsTr("Name, e.g. Portrait 300 pins")
+                Layout.fillWidth: true
+                onAccepted: presetDialog.accept()
+            }
+        }
+    }
+
+    Shortcut {
+        sequences: [StandardKey.Undo]
+        enabled: !window.controller.winding
+        onActivated: window.controller.undo()
+    }
+    Shortcut {
+        sequences: [StandardKey.Redo]
+        enabled: !window.controller.winding
+        onActivated: window.controller.redo()
     }
 
     // Playback shortcuts (ignored while a text field has focus).

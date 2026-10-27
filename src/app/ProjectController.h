@@ -14,6 +14,7 @@
 #include <QPointF>
 #include <QRectF>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 #include <QUrl>
 #include <QVariantList>
@@ -137,6 +138,16 @@ private:
     Q_PROPERTY(bool winding READ winding NOTIFY windingChanged)
     Q_PROPERTY(bool speechAvailable READ speechAvailable CONSTANT)
 
+    // Parameter undo/redo (debounced snapshots of every parameter, crop and
+    // rotation included) and named parameter presets (no crop/rotation).
+    Q_PROPERTY(bool canUndo READ canUndo NOTIFY historyChanged)
+    Q_PROPERTY(bool canRedo READ canRedo NOTIFY historyChanged)
+    Q_PROPERTY(QStringList presetNames READ presetNames NOTIFY presetsChanged)
+    // Finished runs for the current image, newest first:
+    // [{id, error, initialError, segments, lengthM, seconds, summary, colors, time}];
+    // each run's image is served as image://studio/run<id>/0.
+    Q_PROPERTY(QVariantList runHistory READ runHistory NOTIFY runHistoryChanged)
+
 public:
     explicit ProjectController(std::shared_ptr<ImageStore> store, QObject *parent = nullptr);
     ~ProjectController() override;
@@ -181,6 +192,14 @@ public:
     // The next `count` steps after the current one: [{to, from, color}].
     Q_INVOKABLE QVariantList stepsAhead(int count) const;
     Q_INVOKABLE void speak(const QString &text);
+    Q_INVOKABLE void undo();
+    Q_INVOKABLE void redo();
+    Q_INVOKABLE bool savePreset(const QString &name);
+    Q_INVOKABLE bool loadPreset(const QString &name);
+    Q_INVOKABLE void deletePreset(const QString &name);
+    // Applies the parameters (crop and rotation included) of a past run.
+    Q_INVOKABLE void restoreRunSettings(int id);
+    Q_INVOKABLE void removeRun(int id);
 
     // Last-used parameters (frame, pins, thread, tone, run and export
     // options). Crop and rotation belong to an image and are not stored.
@@ -238,6 +257,13 @@ public:
     [[nodiscard]] QVariantList resultPinPositions() const;
     [[nodiscard]] bool winding() const { return m_winding; }
     [[nodiscard]] static bool speechAvailable();
+    [[nodiscard]] bool canUndo() const { return m_historyIndex > 0 || m_historyTimer.isActive(); }
+    [[nodiscard]] bool canRedo() const
+    {
+        return m_historyIndex + 1 < static_cast<int>(m_history.size()) && !m_historyTimer.isActive();
+    }
+    [[nodiscard]] QStringList presetNames() const;
+    [[nodiscard]] QVariantList runHistory() const;
 
 signals:
     void layoutChanged();
@@ -258,6 +284,9 @@ signals:
     void playbackSpeedChanged();
     void windingChanged();
     void suggestionChanged();
+    void historyChanged();
+    void presetsChanged();
+    void runHistoryChanged();
 
 private:
     void setResult(std::vector<int> sequence, std::vector<float> transmittance);
@@ -267,6 +296,11 @@ private:
     [[nodiscard]] std::vector<sa::ColorStep> resultSteps() const;
     [[nodiscard]] std::vector<QColor> resultPalette() const;
     [[nodiscard]] QString windingKey() const;
+    [[nodiscard]] QByteArray parameterSnapshot() const;
+    void recordHistory();
+    void resetHistory();
+    void recordRun();
+    void clearRuns();
     [[nodiscard]] sa::FrameSpec frameSpec() const;
     [[nodiscard]] std::optional<sa::PinLayout> currentLayout() const;
     [[nodiscard]] sa::ProjectData currentSettings() const;
@@ -380,6 +414,26 @@ private:
     double m_suggestionProgress = 0.0;
     std::stop_source m_suggestionStop;
     QFuture<void> m_suggestion;
+
+    struct RunRecord
+    {
+        int id = 0;
+        sa::ProjectData settings; // parameters of the run, crop and rotation included
+        double error = 0.0;
+        double initialError = 0.0;
+        double lengthM = 0.0;
+        double seconds = 0.0;
+        int segments = 0;
+        QString time;
+    };
+    static constexpr int kMaxRuns = 12;
+    static constexpr int kMaxHistory = 200;
+    std::vector<RunRecord> m_runs; // oldest first
+    int m_nextRunId = 1;
+
+    QTimer m_historyTimer; // debounces parameter changes into one undo step
+    std::vector<QByteArray> m_history;
+    int m_historyIndex = -1;
 
     bool m_winding = false;
     QTextToSpeech *m_speech = nullptr; // created on first use

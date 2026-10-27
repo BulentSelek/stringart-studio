@@ -13,6 +13,7 @@ qt_add_qml_module(stringart_ui
         qml/ParamSlider.qml
         qml/PlaybackPanel.qml
         qml/ProgressPanel.qml
+        qml/RunsView.qml
         qml/SettingsPanel.qml
         qml/WindingView.qml
     SOURCES

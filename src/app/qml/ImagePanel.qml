@@ -20,6 +20,7 @@ Pane {
     readonly property int resultTab: 2
     readonly property int residualTab: 3
     readonly property int virtualTab: 4
+    readonly property int runsTab: 5
 
     // Show the virtual reconstruction as soon as a new one is available.
     readonly property int virtualRevision: root.controller.virtualRevision
@@ -102,8 +103,14 @@ Pane {
                 TabButton { text: qsTr("String art") }
                 TabButton { text: qsTr("Residual") }
                 TabButton {
-                    text: qsTr("Virtual (LS)")
+                    text: qsTr("Virtual")
                     enabled: root.controller.hasVirtual
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Virtual least-squares reconstruction (not windable)")
+                }
+                TabButton {
+                    text: root.controller.runHistory.length > 0
+                          ? qsTr("Runs (%1)").arg(root.controller.runHistory.length) : qsTr("Runs")
                 }
 
                 Connections {
@@ -126,22 +133,33 @@ Pane {
             CheckBox {
                 id: pinToggle
                 text: qsTr("Pins")
-                enabled: tabs.currentIndex !== root.originalTab
+                enabled: tabs.currentIndex !== root.originalTab && tabs.currentIndex !== root.runsTab
             }
             Button {
                 text: qsTr("Fit")
                 flat: true
+                visible: tabs.currentIndex !== root.runsTab
                 onClicked: view.fit()
             }
             Label {
                 text: Math.round(view.zoom * 100) + " %"
+                visible: tabs.currentIndex !== root.runsTab
                 font.family: "monospace"
                 Layout.rightMargin: 12
             }
         }
 
+        RunsView {
+            objectName: "runsView"
+            controller: root.controller
+            visible: tabs.currentIndex === root.runsTab
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+        }
+
         Item {
             id: view
+            visible: tabs.currentIndex !== root.runsTab
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true

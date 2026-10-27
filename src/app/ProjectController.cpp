@@ -17,7 +17,10 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFuture>
+#include <QDateTime>
 #include <QImageReader>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSettings>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -33,6 +36,7 @@ namespace {
 
 constexpr int kMaxSourceSize = 2048;
 constexpr int kBaseUpdateDelayMs = 60;
+constexpr int kHistoryDelayMs = 400;
 
 QImage readImage(const QByteArray &bytes, QString *error)
 {
@@ -67,6 +71,21 @@ ProjectController::ProjectController(std::shared_ptr<ImageStore> store, QObject 
     for (auto signal : {&ProjectController::geometryChanged, &ProjectController::layoutChanged,
                         &ProjectController::imagesChanged})
         connect(this, signal, this, &ProjectController::effectiveCropChanged);
+    m_historyTimer.setSingleShot(true);
+    m_historyTimer.setInterval(kHistoryDelayMs);
+    connect(&m_historyTimer, &QTimer::timeout, this, &ProjectController::recordHistory);
+    for (auto signal : {&ProjectController::layoutChanged, &ProjectController::settingsChanged,
+                        &ProjectController::renderStyleChanged, &ProjectController::toneChanged,
+                        &ProjectController::geometryChanged, &ProjectController::colorModeChanged,
+                        &ProjectController::paletteChanged}) {
+        connect(this, signal, this, [this] {
+            const bool wasActive = m_historyTimer.isActive();
+            m_historyTimer.start();
+            if (!wasActive)
+                emit historyChanged();
+        });
+    }
+    resetHistory();
     setStatus(tr("Load an image to begin (File dialog or drag and drop)."));
 }
 
@@ -274,6 +293,8 @@ bool ProjectController::loadImage(const QUrl &url)
     emit geometryChanged();
     setImage(std::move(image), std::move(bytes), path);
     clearResult();
+    clearRuns();
+    resetHistory();
     setStatus(tr("Loaded %1 (%2 x %3).").arg(m_imageName).arg(size.width()).arg(size.height()));
     return true;
 }
@@ -722,6 +743,7 @@ void ProjectController::onWorkerFinished(bool success)
             m_elapsedSeconds += result->elapsedSeconds;
             emit progressChanged();
             setResult(std::move(result->sequence), std::move(result->transmittance));
+            recordRun();
             setStatus(tr("Refined in %1 s: error %2 → %3, %4 segments (%5).")
                           .arg(result->elapsedSeconds, 0, 'f', 2)
                           .arg(result->initialError, 0, 'f', 5)
@@ -735,6 +757,7 @@ void ProjectController::onWorkerFinished(bool success)
             setColorResult(std::move(result->colorSteps), std::move(result->rgb));
         else
             setResult(std::move(result->sequence), std::move(result->transmittance));
+        recordRun();
         setStatus(tr("Finished: %1 segments in %2 s (%3).")
                       .arg(segmentCount)
                       .arg(result->elapsedSeconds, 0, 'f', 2)
@@ -1216,6 +1239,219 @@ void ProjectController::exportWindingGuide(const QUrl &url)
     });
 }
 
+// ------------------------------------------------- history, presets, runs
+
+QByteArray ProjectController::parameterSnapshot() const
+{
+    sa::ProjectData p = currentSettings();
+    p.imagePath.clear();
+    p.imageData.clear();
+    return sa::ProjectFile::toJson(p, false, false);
+}
+
+void ProjectController::resetHistory()
+{
+    m_historyTimer.stop();
+    m_history = {parameterSnapshot()};
+    m_historyIndex = 0;
+    emit historyChanged();
+}
+
+void ProjectController::recordHistory()
+{
+    m_historyTimer.stop();
+    QByteArray snapshot = parameterSnapshot();
+    if (m_historyIndex >= 0 && m_history[static_cast<std::size_t>(m_historyIndex)] == snapshot) {
+        emit historyChanged();
+        return;
+    }
+    m_history.resize(static_cast<std::size_t>(m_historyIndex) + 1); // drops the redo branch
+    m_history.push_back(std::move(snapshot));
+    if (static_cast<int>(m_history.size()) > kMaxHistory)
+        m_history.erase(m_history.begin());
+    m_historyIndex = static_cast<int>(m_history.size()) - 1;
+    emit historyChanged();
+}
+
+void ProjectController::undo()
+{
+    if (m_running)
+        return;
+    if (m_historyTimer.isActive())
+        recordHistory(); // pending edits become the step to undo
+    if (m_historyIndex <= 0)
+        return;
+    --m_historyIndex;
+    applySettings(sa::ProjectFile::fromJson(m_history[static_cast<std::size_t>(m_historyIndex)]));
+    m_historyTimer.stop(); // the signals of applySettings are not a new edit
+    emit historyChanged();
+    setStatus(tr("Undone."));
+}
+
+void ProjectController::redo()
+{
+    if (m_running || m_historyTimer.isActive() || m_historyIndex + 1 >= static_cast<int>(m_history.size()))
+        return;
+    ++m_historyIndex;
+    applySettings(sa::ProjectFile::fromJson(m_history[static_cast<std::size_t>(m_historyIndex)]));
+    m_historyTimer.stop();
+    emit historyChanged();
+    setStatus(tr("Redone."));
+}
+
+namespace {
+
+constexpr auto kPresetsKey = "Presets/parameters";
+
+QJsonObject readPresets()
+{
+    return QJsonDocument::fromJson(QSettings().value(QLatin1StringView(kPresetsKey)).toByteArray()).object();
+}
+
+} // namespace
+
+QStringList ProjectController::presetNames() const
+{
+    QStringList names = readPresets().keys();
+    names.sort(Qt::CaseInsensitive);
+    return names;
+}
+
+bool ProjectController::savePreset(const QString &name)
+{
+    const QString trimmed = name.trimmed();
+    if (trimmed.isEmpty())
+        return false;
+    sa::ProjectData p = currentSettings();
+    p.imagePath.clear();
+    p.imageData.clear();
+    p.crop = QRectF();
+    p.rotationDegrees = 0.0;
+    QJsonObject presets = readPresets();
+    presets.insert(trimmed, QString::fromUtf8(sa::ProjectFile::toJson(p, false, false)));
+    QSettings().setValue(QLatin1StringView(kPresetsKey), QJsonDocument(presets).toJson(QJsonDocument::Compact));
+    emit presetsChanged();
+    setStatus(tr("Saved preset \"%1\".").arg(trimmed));
+    return true;
+}
+
+bool ProjectController::loadPreset(const QString &name)
+{
+    if (m_running)
+        return false;
+    const QJsonValue value = readPresets().value(name);
+    if (!value.isString())
+        return false;
+    if (m_historyTimer.isActive())
+        recordHistory(); // keep pending edits as their own undo step
+    try {
+        sa::ProjectData p = sa::ProjectFile::fromJson(value.toString().toUtf8());
+        p.crop = m_crop; // presets never move the crop
+        p.rotationDegrees = m_rotation;
+        applySettings(p);
+    } catch (const std::exception &e) {
+        setStatus(tr("Preset \"%1\" is invalid: %2").arg(name, QString::fromUtf8(e.what())));
+        return false;
+    }
+    setStatus(tr("Loaded preset \"%1\".").arg(name));
+    return true;
+}
+
+void ProjectController::deletePreset(const QString &name)
+{
+    QJsonObject presets = readPresets();
+    if (!presets.contains(name))
+        return;
+    presets.remove(name);
+    QSettings().setValue(QLatin1StringView(kPresetsKey), QJsonDocument(presets).toJson(QJsonDocument::Compact));
+    emit presetsChanged();
+    setStatus(tr("Deleted preset \"%1\".").arg(name));
+}
+
+void ProjectController::recordRun()
+{
+    RunRecord run;
+    run.id = m_nextRunId++;
+    run.settings = m_runSettings;
+    run.error = m_error;
+    run.initialError = m_initialError;
+    run.lengthM = m_threadLengthMm / 1000.0;
+    run.seconds = m_elapsedSeconds;
+    run.segments = resultSegments();
+    run.time = QTime::currentTime().toString(QStringLiteral("HH:mm:ss"));
+    m_store->set(QStringLiteral("run%1").arg(run.id), m_store->get(QStringLiteral("result")));
+    m_runs.push_back(std::move(run));
+    if (static_cast<int>(m_runs.size()) > kMaxRuns) {
+        m_store->set(QStringLiteral("run%1").arg(m_runs.front().id), QImage());
+        m_runs.erase(m_runs.begin());
+    }
+    emit runHistoryChanged();
+}
+
+void ProjectController::clearRuns()
+{
+    for (const RunRecord &run : m_runs)
+        m_store->set(QStringLiteral("run%1").arg(run.id), QImage());
+    m_runs.clear();
+    emit runHistoryChanged();
+}
+
+QVariantList ProjectController::runHistory() const
+{
+    QVariantList rows;
+    for (auto it = m_runs.rbegin(); it != m_runs.rend(); ++it) {
+        const sa::ProjectData &p = it->settings;
+        QString summary = tr("%1 pins, opacity %2, width %3 px")
+                              .arg(p.frame.kind == sa::PinLayoutKind::Custom
+                                       ? static_cast<int>(p.frame.customPinsMm.size())
+                                       : p.frame.pinCount)
+                              .arg(p.config.threadOpacity, 0, 'f', 2)
+                              .arg(p.config.threadWidth, 0, 'f', 1);
+        if (p.edgeEmphasis > 0.0)
+            summary += tr(", edges %1").arg(p.edgeEmphasis, 0, 'f', 1);
+        if (p.config.minPinSeparation > 0)
+            summary += tr(", min. separation %1").arg(p.config.minPinSeparation);
+        QVariantList colors;
+        if (p.colorMode) {
+            for (const QColor &c : p.palette)
+                colors.append(c);
+        }
+        rows.append(QVariantMap{{QStringLiteral("id"), it->id},
+                                {QStringLiteral("error"), it->error},
+                                {QStringLiteral("initialError"), it->initialError},
+                                {QStringLiteral("segments"), it->segments},
+                                {QStringLiteral("lengthM"), it->lengthM},
+                                {QStringLiteral("seconds"), it->seconds},
+                                {QStringLiteral("summary"), summary},
+                                {QStringLiteral("colors"), colors},
+                                {QStringLiteral("time"), it->time}});
+    }
+    return rows;
+}
+
+void ProjectController::restoreRunSettings(int id)
+{
+    if (m_running)
+        return;
+    const auto it = std::find_if(m_runs.begin(), m_runs.end(), [id](const RunRecord &r) { return r.id == id; });
+    if (it == m_runs.end())
+        return;
+    if (m_historyTimer.isActive())
+        recordHistory();
+    applySettings(it->settings);
+    setStatus(tr("Restored the settings of run #%1. Start to recompute it.").arg(id));
+}
+
+void ProjectController::removeRun(int id)
+{
+    const auto it = std::find_if(m_runs.begin(), m_runs.end(), [id](const RunRecord &r) { return r.id == id; });
+    if (it == m_runs.end())
+        return;
+    m_store->set(QStringLiteral("run%1").arg(id), QImage());
+    m_runs.erase(it);
+    emit runHistoryChanged();
+}
+
 // ---------------------------------------------------------------- projects
 
 bool ProjectController::saveProject(const QUrl &url)
@@ -1310,6 +1546,8 @@ bool ProjectController::openProject(const QUrl &url)
                                                                                 project.config.threadWidth,
                                                                                 project.config.threadOpacity));
     }
+    clearRuns();
+    resetHistory();
     setStatus(tr("Opened %1.").arg(QFileInfo(path).fileName()) + imageNote);
     return true;
 }
@@ -1354,6 +1592,7 @@ void ProjectController::restoreSettings(QSettings &settings)
     } catch (const std::exception &) {
         // Stale or corrupt settings: keep the defaults.
     }
+    resetHistory();
 }
 
 // ------------------------------------------------------------------- state

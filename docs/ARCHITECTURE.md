@@ -304,6 +304,24 @@ stored in QSettings under a hash of the result's steps, so reopening the
 same project (or recomputing the same result) resumes winding where it
 stopped.
 
+## Undo, presets and run comparison
+
+- **Undo / redo** (Ctrl+Z, Ctrl+Shift+Z, toolbar arrows): every parameter
+  change, crop and rotation included, restarts a 400 ms timer; when it fires,
+  a snapshot of all parameters (the project JSON without image) is pushed
+  if it differs from the current entry. Quick successive edits (a slider
+  drag) therefore form one step, and undo first commits a pending edit.
+  Applying a snapshot is not recorded again. The history (200 steps) starts
+  over when an image or project is opened. Results are not part of it.
+- **Presets** (toolbar menu): named parameter sets without crop and
+  rotation, stored in the application settings as project JSON, so they
+  survive restarts and are validated on load. Loading one is undoable.
+- **Runs** view: each finished run (and each refinement) of the current
+  image is kept with its image, statistics and settings, up to 12. Two runs
+  are shown side by side with the relative error difference; *Use settings*
+  restores a run's parameters (undoable). Opening another image clears the
+  list.
+
 ## Residual visualization
 
 `ThreadRenderer::residualImage` maps `enc(T) − g` to a diverging image: red

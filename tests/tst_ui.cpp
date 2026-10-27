@@ -56,6 +56,9 @@ private slots:
     void colourWorkflow();
     void workshopWorkflow();
     void paletteSuggestion();
+    void undoRedo();
+    void presets();
+    void runHistory();
 
 private:
     void createUi();
@@ -743,6 +746,109 @@ void TestUi::paletteSuggestion()
     // Destroying the UI while a suggestion runs is safe.
     m_controller->suggestPalette(3);
     QVERIFY(m_controller->suggestingPalette());
+}
+
+void TestUi::undoRedo()
+{
+    QVERIFY(!m_controller->canUndo());
+    m_controller->setProperty("pinCount", 150);
+    QVERIFY(m_controller->canUndo()); // pending edit counts
+    QTest::qWait(600);                 // past the debounce: its own step
+    // Quick successive edits form one step.
+    m_controller->setProperty("opacity", 0.3);
+    m_controller->setProperty("opacity", 0.35);
+    m_controller->setProperty("opacity", 0.4);
+    m_controller->undo(); // flushes the pending edit, then undoes it
+    QCOMPARE(m_controller->property("opacity").toFloat(), 0.2f); // stored as float
+    QCOMPARE(m_controller->property("pinCount").toInt(), 150);
+    QVERIFY(m_controller->canRedo());
+    m_controller->undo();
+    QCOMPARE(m_controller->property("pinCount").toInt(), 240);
+    QVERIFY(!m_controller->canUndo());
+    // The applied state is not recorded as a new edit.
+    QTest::qWait(600);
+    QVERIFY(m_controller->canRedo());
+    m_controller->redo();
+    m_controller->redo();
+    QCOMPARE(m_controller->property("pinCount").toInt(), 150);
+    QCOMPARE(m_controller->property("opacity").toFloat(), 0.4f); // stored as float
+    // A new edit drops the redo branch.
+    m_controller->undo();
+    m_controller->setProperty("threadWidth", 1.5);
+    QTRY_VERIFY(!m_controller->canRedo() && m_controller->canUndo());
+    QCOMPARE(m_controller->property("opacity").toFloat(), 0.2f); // stored as float
+
+    // Keyboard and toolbar.
+    QTest::keySequence(m_window, QKeySequence::Undo);
+    QCOMPARE(m_controller->property("threadWidth").toDouble(), 1.0);
+    QQuickItem *undoButton = findItem(QStringLiteral("undoButton"));
+    QVERIFY(undoButton);
+    QTRY_VERIFY(undoButton->isEnabled());
+    QMetaObject::invokeMethod(undoButton, "clicked");
+    QCOMPARE(m_controller->property("pinCount").toInt(), 240);
+}
+
+void TestUi::presets()
+{
+    m_controller->setProperty("pinCount", 180);
+    m_controller->setProperty("opacity", 0.3);
+    QVERIFY(m_controller->savePreset(QStringLiteral("  Fine  ")));
+    QVERIFY(!m_controller->savePreset(QStringLiteral("   ")));
+    QCOMPARE(m_controller->presetNames(), QStringList{QStringLiteral("Fine")});
+    m_controller->setProperty("pinCount", 300);
+    m_controller->setProperty("opacity", 0.1);
+    QVERIFY(m_controller->loadPreset(QStringLiteral("Fine")));
+    QCOMPARE(m_controller->property("pinCount").toInt(), 180);
+    QCOMPARE(m_controller->property("opacity").toFloat(), 0.3f); // stored as float
+    QVERIFY(!m_controller->loadPreset(QStringLiteral("missing")));
+    // Loading a preset is undoable.
+    m_controller->undo();
+    QCOMPARE(m_controller->property("pinCount").toInt(), 300);
+
+    // Presets are stored in the settings, not in the session.
+    destroyUi();
+    createUi();
+    QCOMPARE(m_controller->presetNames(), QStringList{QStringLiteral("Fine")});
+    m_controller->deletePreset(QStringLiteral("Fine"));
+    QVERIFY(m_controller->presetNames().isEmpty());
+}
+
+void TestUi::runHistory()
+{
+    QVERIFY(m_controller->loadImage(m_portrait));
+    m_controller->setProperty("maxSegments", 300);
+    m_controller->setProperty("pinCount", 120);
+    m_controller->start();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
+    m_controller->setProperty("pinCount", 200);
+    m_controller->start();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
+
+    QVariantList runs = m_controller->runHistory();
+    QCOMPARE(runs.size(), 2);
+    const QVariantMap newest = runs[0].toMap();
+    const QVariantMap oldest = runs[1].toMap();
+    QVERIFY(newest.value(QStringLiteral("id")).toInt() > oldest.value(QStringLiteral("id")).toInt());
+    QVERIFY(newest.value(QStringLiteral("summary")).toString().startsWith(QStringLiteral("200 pins")));
+    QCOMPARE(newest.value(QStringLiteral("error")).toDouble(), m_controller->error());
+    QVERIFY(!m_store->get(QStringLiteral("run%1").arg(oldest.value(QStringLiteral("id")).toInt())).isNull());
+
+    findItem(QStringLiteral("viewTabs"))->setProperty("currentIndex", 5);
+    QTRY_VERIFY(findItem(QStringLiteral("runsView"))->isVisible());
+    QTest::qWait(300);
+    const QByteArray shot = qgetenv("STRINGART_UI_RUNS");
+    if (!shot.isEmpty())
+        QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(shot)));
+
+    m_controller->restoreRunSettings(oldest.value(QStringLiteral("id")).toInt());
+    QCOMPARE(m_controller->property("pinCount").toInt(), 120);
+    m_controller->removeRun(oldest.value(QStringLiteral("id")).toInt());
+    QCOMPARE(m_controller->runHistory().size(), 1);
+    QVERIFY(m_store->get(QStringLiteral("run%1").arg(oldest.value(QStringLiteral("id")).toInt())).isNull());
+
+    // A new image starts a new comparison.
+    QVERIFY(m_controller->loadImage(m_portrait));
+    QVERIFY(m_controller->runHistory().isEmpty());
 }
 
 QTEST_MAIN(TestUi)
