@@ -58,6 +58,7 @@ private slots:
     void workshopWorkflow();
     void paletteSuggestion();
     void threadDiameterInMillimetres();
+    void effortLevels();
     void undoRedo();
     void presets();
     void runHistory();
@@ -776,6 +777,24 @@ void TestUi::paletteSuggestion()
     // Destroying the UI while a suggestion runs is safe.
     m_controller->suggestPalette(3);
     QVERIFY(m_controller->suggestingPalette());
+}
+
+void TestUi::effortLevels()
+{
+    findItem(QStringLiteral("categoryTabs"))->setProperty("currentIndex", 3);
+    QQuickItem *effort = nullptr;
+    QTRY_VERIFY((effort = findItem(QStringLiteral("effortField"))) && effort->isVisible());
+    QCOMPARE(m_controller->property("workingSize").toInt(), 512); // Medium by default
+    QCOMPARE(effort->property("currentIndex").toInt(), 1);
+    QCOMPARE(effort->property("displayText").toString(), QStringLiteral("Medium"));
+    QMetaObject::invokeMethod(effort, "activated", Q_ARG(int, 2));
+    QCOMPARE(m_controller->property("workingSize").toInt(), 1024);
+    QCOMPARE(effort->property("displayText").toString(), QStringLiteral("High"));
+    QMetaObject::invokeMethod(effort, "activated", Q_ARG(int, 0));
+    QCOMPARE(m_controller->property("workingSize").toInt(), 384);
+    // A resolution from a project that is not one of the levels.
+    m_controller->setProperty("workingSize", 768);
+    QCOMPARE(effort->property("displayText").toString(), QStringLiteral("Custom"));
 }
 
 void TestUi::threadDiameterInMillimetres()

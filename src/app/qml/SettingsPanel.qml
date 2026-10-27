@@ -558,13 +558,23 @@ Pane {
             Page {
                 SectionLabel { text: qsTr("Quality") }
                 ComboField {
-                    readonly property var sizes: [256, 384, 512, 768, 1024]
-                    label: qsTr("Working size")
-                    help: qsTr("Resolution used for optimization (long side). Higher is more detailed and slower.")
+                    id: effortField
+                    objectName: "effortField"
+                    // Effort levels are working resolutions (long side, px).
+                    readonly property var sizes: [384, 512, 1024]
+                    readonly property int level: sizes.indexOf(root.controller.workingSize)
+                    label: qsTr("Effort")
+                    help: qsTr("How finely the optimizer looks at the picture (working resolution). Higher finds finer detail and places threads more precisely but takes longer: Low for quick trials, High for the final piece. Pins, thread and frame do not change.")
                     enabled: !root.controller.running
-                    model: sizes.map(s => s + " px")
-                    currentIndex: Math.max(0, sizes.indexOf(root.controller.workingSize))
+                    model: [qsTr("Low"), qsTr("Medium"), qsTr("High")]
+                    currentIndex: level
+                    // Projects may carry another resolution.
+                    displayText: level >= 0 ? model[level] : qsTr("Custom")
                     onActivated: index => root.controller.workingSize = sizes[index]
+                }
+                Hint {
+                    text: qsTr("%1 px working resolution · %2 mm per pixel")
+                          .arg(root.controller.workingSize).arg(root.controller.mmPerPixel.toFixed(2))
                 }
                 IntField {
                     label: qsTr("Max. segments")

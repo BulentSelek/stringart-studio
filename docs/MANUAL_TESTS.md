@@ -41,6 +41,8 @@ own photos.
       clicking again cancels, the palette is replaced when it finishes.
 
 ## Run and results
+- [ ] *Effort* Low / Medium / High changes the working resolution shown in
+      the hint (384 / 512 / 1024 px); a High run takes visibly longer.
 - [ ] *Start*; the String art view (thread and error map) updates live; the UI stays
       responsive while dragging sliders and zooming.
 - [ ] Pause / Resume / Cancel; a cancelled run keeps its partial result.
