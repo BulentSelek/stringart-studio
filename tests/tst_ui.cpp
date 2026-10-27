@@ -440,6 +440,13 @@ void TestUi::playbackWorkflow()
     QTRY_VERIFY_WITH_TIMEOUT(!m_controller->exporting(), 30000);
     QCOMPARE(QImage(path).size(), QSize(512, 512));
 
+    // Before/after comparison is available on the result view.
+    findItem(QStringLiteral("viewTabs"))->setProperty("currentIndex", 2);
+    QQuickItem *compare = findItem(QStringLiteral("compareToggle"));
+    QVERIFY(compare);
+    QVERIFY(compare->isEnabled());
+    compare->setProperty("checked", true);
+
     QTest::qWait(300);
     const QByteArray shot = qgetenv("STRINGART_UI_PLAYBACK");
     if (!shot.isEmpty())

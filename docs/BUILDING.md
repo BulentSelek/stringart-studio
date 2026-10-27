@@ -54,7 +54,8 @@ hover (?):
 Selecting *Image* or *Frame* switches the centre view to *Original* or
 *Processed*. Press **Start** on the right; the *String art* and *Residual*
 views update live, with Pause / Resume / Cancel. The mouse wheel zooms around
-the cursor, drag pans, **Fit** resets, **Pins** overlays pin markers. Export
+the cursor, drag pans, **Fit** resets, **Pins** overlays pin markers, and
+**Compare** (String art view) shows the target left of a draggable divider. Export
 PNG, the winding CSV (mm or px), SVG or JSON on the right.
 
 After a run, the bottom *Winding* panel replays the sequence: drag the

@@ -101,6 +101,15 @@ Pane {
                 }
             }
             CheckBox {
+                id: compareToggle
+                objectName: "compareToggle"
+                text: qsTr("Compare")
+                enabled: tabs.currentIndex === root.resultTab && root.controller.hasResult
+                ToolTip.visible: hovered
+                ToolTip.delay: 300
+                ToolTip.text: qsTr("Show the target image left of a movable divider")
+            }
+            CheckBox {
                 id: pinToggle
                 text: qsTr("Pins")
                 enabled: tabs.currentIndex !== root.originalTab
@@ -150,7 +159,7 @@ Pane {
                 contentWidth: Math.max(width, (view.x1 - view.x0) * image.implicitWidth * view.zoom)
                 contentHeight: Math.max(height, (view.y1 - view.y0) * image.implicitHeight * view.zoom)
                 boundsBehavior: Flickable.StopAtBounds
-                interactive: !cropFrame.active
+                interactive: !cropFrame.active && !dividerArea.pressed
                 ScrollBar.horizontal: ScrollBar {}
                 ScrollBar.vertical: ScrollBar {}
 
@@ -181,6 +190,74 @@ Pane {
                         mipmap: true
                         fillMode: Image.Stretch
                         retainWhileLoading: true
+
+                        // Before/after comparison: the processed target left of the divider.
+                        Item {
+                            id: compare
+                            anchors.fill: parent
+                            visible: compareToggle.checked && compareToggle.enabled
+                            property real divider: 0.5
+
+                            Item {
+                                width: compare.divider * compare.width
+                                height: compare.height
+                                clip: true
+                                Image {
+                                    width: compare.width
+                                    height: compare.height
+                                    source: compare.visible
+                                            ? "image://studio/processed/" + root.controller.processedRevision : ""
+                                    cache: false
+                                    smooth: view.zoom < 2
+                                    mipmap: true
+                                }
+                            }
+                            Rectangle {
+                                x: compare.divider * compare.width - 1
+                                width: 2
+                                height: compare.height
+                                color: Material.accent
+                            }
+                            Rectangle {
+                                x: compare.divider * compare.width - width / 2
+                                y: compare.height / 2 - height / 2
+                                width: 22
+                                height: 44
+                                radius: 6
+                                color: Material.accent
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: "⇔"
+                                    color: "#202020"
+                                }
+                                MouseArea {
+                                    id: dividerArea
+                                    anchors.fill: parent
+                                    anchors.margins: -8
+                                    cursorShape: Qt.SplitHCursor
+                                    onPositionChanged: mouse => {
+                                        const p = mapToItem(compare, mouse.x, mouse.y)
+                                        compare.divider = Math.max(0, Math.min(1, p.x / compare.width))
+                                    }
+                                }
+                            }
+                            Label {
+                                x: 8
+                                y: 8
+                                visible: compare.divider > 0.15
+                                text: qsTr("Target")
+                                padding: 4
+                                background: Rectangle { color: "#a0000000"; radius: 3 }
+                            }
+                            Label {
+                                x: compare.width - width - 8
+                                y: 8
+                                visible: compare.divider < 0.85
+                                text: qsTr("String art")
+                                padding: 4
+                                background: Rectangle { color: "#a0000000"; radius: 3 }
+                            }
+                        }
 
                         // Current winding segment during playback.
                         Canvas {
