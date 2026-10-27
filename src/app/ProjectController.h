@@ -164,7 +164,7 @@ public:
     Q_INVOKABLE void suggestPalette(int count);
     Q_INVOKABLE void cancelPaletteSuggestion();
     Q_INVOKABLE void start();
-    // Algorithm C on the current result (continuous thread preserved).
+    // Algorithm B on the current result (continuous thread preserved).
     Q_INVOKABLE void refineSequence();
     Q_INVOKABLE void pause();
     Q_INVOKABLE void resume();

@@ -13,7 +13,7 @@ struct SequenceRefinementSettings
     bool changeSegmentCount = true; // allow Delete and Insert moves (bounded by maxSegments)
 };
 
-// Algorithm C: local search on an existing continuous sequence.
+// Algorithm B: local search on an existing continuous sequence.
 //
 // Moves at position i with neighbours a = s[i-1], b = s[i], c = s[i+1]:
 //   Relocate: (a,b),(b,c) -> (a,p),(p,c) for p near b (last position: (a,b) -> (a,p))

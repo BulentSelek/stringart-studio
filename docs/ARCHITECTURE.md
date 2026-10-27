@@ -29,7 +29,7 @@ src/
 │   ├── GreedyOptimizer.*      Algorithm A
 │   ├── LayeredColorOptimizer.* multi-colour threads wound in layers
 │   ├── PaletteSuggester.*     thread colours from the image (multi-colour)
-│   └── SequenceOptimizer.*    Algorithm C
+│   └── SequenceOptimizer.*    Algorithm B
 ├── app/                   stringart_ui (QML module "StringArtStudio") + stringart-studio
 │   ├── ProjectController.*    UI state and commands exposed to QML
 │   ├── OptimizationWorker.*   std::jthread worker, pause/resume/cancel, throttled previews
@@ -389,7 +389,7 @@ multi-colour results `ColorRenderer::residualImage` shows the luminance
 difference only; hue errors (e.g. orange instead of red) are not visible
 in it.
 
-## Algorithm C — sequence refinement (implemented)
+## Algorithm B — sequence refinement (implemented)
 
 `SequenceOptimizer` (an `IOptimizer`) improves an existing continuous
 sequence by local search. Moves at position *i* with neighbours
@@ -443,17 +443,14 @@ hundreds of nearly equivalent candidate lines per step, a one-step-deeper
 view does not change the outcome noticeably, so the code was removed
 rather than offered as a slower option with no benefit.
 
-## Algorithm B — least-squares line weights (removed)
+### Tried and not adopted: least-squares line weights
 
-The spec (README, Algorithm B) asks for an optional least-squares stage that
-gives the result's lines continuous weights, shown as a virtual
-reconstruction clearly separate from the windable thread. It was
-implemented (bounded least squares in optical density, projected coordinate
-descent, KKT-verified; e.g. error 0.052 virtual vs 0.083 for the real
-thread at 1200 segments) and then removed on request: fractional weights
-cannot be wound, it worked for single-colour results only, and the number
-did not help anyone build a piece. This is a deliberate deviation from the
-spec.
+A stage that gave the result's lines continuous weights by bounded least
+squares in optical density (projected coordinate descent, KKT-verified)
+was implemented and removed: e.g. error 0.052 with ideal weights vs 0.083
+for the real thread at 1200 segments, but fractional weights cannot be
+wound, it worked for single-colour results only, and the number did not
+help anyone build a piece.
 
 ## Threading and UI
 

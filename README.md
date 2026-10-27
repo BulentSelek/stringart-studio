@@ -115,19 +115,7 @@ Avoid evaluating every candidate by repeatedly rendering the full image.
 
 Precompute line pixel coverage or use efficient incremental line scoring.
 
-#### Algorithm B: Least-Squares Refinement
-
-Implement an optional refinement stage that optimizes line contributions for a fixed set of candidate connections.
-
-Use a clearly defined constrained least-squares model.
-
-If non-negative coefficients are used, implement or integrate a suitable bounded solver.
-
-Do not confuse independent line-weight optimization with physically valid continuous-thread sequencing.
-
-The UI must explicitly distinguish virtual reconstruction quality from manufacturable single-thread output.
-
-#### Algorithm C: Sequence Optimization
+#### Algorithm B: Sequence Optimization
 
 Implement a refinement method that improves an existing continuous pin sequence.
 
@@ -311,7 +299,6 @@ StringArtStudio/
 │   ├── algorithms/
 │   │   ├── IOptimizer.h
 │   │   ├── GreedyOptimizer.h/.cpp
-│   │   ├── LeastSquaresOptimizer.h/.cpp
 │   │   └── SequenceOptimizer.h/.cpp
 │   ├── application/
 │   │   ├── ProjectController.h/.cpp
@@ -404,7 +391,6 @@ Do not proceed to complex algorithms before validating the MVP.
 
 ### Phase 4 — Advanced Features
 
-- Least-squares refinement
 - Sequence optimization
 - Colored strings
 - Playback
