@@ -53,7 +53,9 @@ hover (?):
 
 After a run, **Refine sequence** (right panel) runs a local search on the
 finished thread that moves, removes or inserts single pins where that lowers
-the error; the thread stays continuous.
+the error; the thread stays continuous. **Virtual reconstruction (LS)**
+computes ideal fractional weights for the result's lines and shows them in
+the separate *Virtual (LS)* view: a quality bound, not a windable thread.
 
 Selecting *Image* or *Frame* switches the centre view to *Original* or
 *Processed*. Press **Start** on the right; the *String art* and *Residual*

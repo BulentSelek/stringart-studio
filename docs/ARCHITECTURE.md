@@ -24,6 +24,7 @@ src/
 ├── algorithms/
 │   ├── IOptimizer.h           common optimizer interface
 │   ├── GreedyOptimizer.*      Algorithm A
+│   ├── LeastSquaresOptimizer.* Algorithm B (virtual)
 │   └── SequenceOptimizer.*    Algorithm C
 ├── app/                   stringart_ui (QML module "StringArtStudio") + stringart-studio
 │   ├── ProjectController.*    UI state and commands exposed to QML
@@ -242,11 +243,33 @@ sequence in the tests) and when the segment budget leaves room for
 insertions. Available as *Refine sequence* in the UI and `--refine-passes` /
 `--refine-neighborhood` in the CLI.
 
-## Algorithm B
+## Algorithm B — least-squares line weights (implemented, virtual)
 
-Not implemented yet. When added, the UI must label least-squares line
-weights as *virtual reconstruction* quality, distinct from the
-manufacturable single-thread sequence.
+`LeastSquaresOptimizer` fixes the candidate set to the distinct lines of the
+current result and gives each a continuous weight `x_l ∈ [0, xmax]`
+(default 4; initial value = how often the line occurs). In optical density
+threads add up exactly:
+
+```
+d_l(p) = −ln(1 − a·c_l(p))          density of one thread along line l
+D(p)   = Σ_l x_l d_l(p),  T = e^(−D)
+D*(p)  = −ln(max(t(p), 10⁻³))       t = linear-light target
+minimize Σ_p w_p (D(p) − D*(p))²    subject to 0 ≤ x_l ≤ xmax
+```
+
+This convex box-constrained QP is solved by cyclic projected coordinate
+descent (`x_l ← clamp(x_l − g_l/h_l, 0, xmax)`), which decreases the
+objective monotonically; tests verify the KKT conditions. Cost per sweep:
+`O(Σ line lengths)`; typically < 0.1 s.
+
+**This is not a manufacturable result.** Fractional weights cannot be wound
+and the continuity of the thread is ignored. The UI therefore shows it only
+in a separate *Virtual (LS)* view with a banner, next to the error of the
+actual thread (e.g. 0.052 virtual vs 0.083 thread for 1200 segments): the gap
+measures how much the integer, continuous-thread constraint costs for that
+line set. Exports always use the real sequence. Note that the fit is in
+density space, not in the sRGB objective, so it is an informative bound
+rather than an exact optimum of the reported error.
 
 ## Threading and UI
 

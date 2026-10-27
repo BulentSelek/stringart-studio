@@ -64,6 +64,17 @@ Pane {
             ToolTip.text: qsTr("Local search on the finished thread: moves, removes or inserts single pins where that lowers the error. The thread stays continuous.")
         }
 
+        Button {
+            text: root.controller.computingVirtual ? qsTr("Computing…") : qsTr("Virtual reconstruction (LS)")
+            enabled: root.controller.hasResult && !root.controller.running && !root.controller.computingVirtual
+            flat: true
+            Layout.fillWidth: true
+            onClicked: root.controller.computeVirtual()
+            ToolTip.visible: hovered
+            ToolTip.delay: 300
+            ToolTip.text: qsTr("Least-squares weights for the result's lines: an upper bound on quality for this line set. Not windable; shown in the Virtual view.")
+        }
+
         RowLayout {
             Layout.fillWidth: true
 

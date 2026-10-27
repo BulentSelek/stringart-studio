@@ -19,6 +19,11 @@ Pane {
     readonly property int processedTab: 1
     readonly property int resultTab: 2
     readonly property int residualTab: 3
+    readonly property int virtualTab: 4
+
+    // Show the virtual reconstruction as soon as a new one is available.
+    readonly property int virtualRevision: root.controller.virtualRevision
+    onVirtualRevisionChanged: if (root.controller.hasVirtual) tabs.currentIndex = root.virtualTab
 
     padding: 0
     Material.background: "#1b1b1f"
@@ -67,12 +72,17 @@ Pane {
         case 0: return "image://studio/original/" + root.controller.originalRevision
         case 1: return "image://studio/processed/" + root.controller.processedRevision
         case 2: return "image://studio/result/" + root.controller.resultRevision
-        default: return "image://studio/residual/" + root.controller.resultRevision
+        case 3: return "image://studio/residual/" + root.controller.resultRevision
+        default: return "image://studio/virtual/" + root.controller.virtualRevision
         }
     }
-    readonly property bool imageAvailable: tabs.currentIndex < root.resultTab ? root.controller.hasImage
-                                                                              : root.controller.hasResult
-                                                                                || root.controller.running
+    readonly property bool imageAvailable: {
+        if (tabs.currentIndex < root.resultTab)
+            return root.controller.hasImage
+        if (tabs.currentIndex === root.virtualTab)
+            return root.controller.hasVirtual
+        return root.controller.hasResult || root.controller.running
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -91,6 +101,10 @@ Pane {
                 TabButton { text: qsTr("Processed") }
                 TabButton { text: qsTr("String art") }
                 TabButton { text: qsTr("Residual") }
+                TabButton {
+                    text: qsTr("Virtual (LS)")
+                    enabled: root.controller.hasVirtual
+                }
 
                 Connections {
                     target: root.controller
@@ -263,7 +277,8 @@ Pane {
                         Canvas {
                             id: segmentOverlay
                             anchors.fill: parent
-                            visible: root.highlightSegment && tabs.currentIndex >= root.resultTab
+                            visible: root.highlightSegment
+                                     && (tabs.currentIndex === root.resultTab || tabs.currentIndex === root.residualTab)
                                      && root.controller.hasResult && !root.controller.running
                             property var line: root.controller.currentSegmentLine
                             onLineChanged: requestPaint()
@@ -510,6 +525,26 @@ Pane {
                 text: qsTr("Press Start to generate string art")
                 font.pixelSize: 20
                 opacity: 0.5
+            }
+
+            Pane {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 12
+                visible: tabs.currentIndex === root.virtualTab && root.imageAvailable
+                opacity: 0.92
+                padding: 8
+                Label {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Virtual reconstruction (least squares): the result's %1 lines with ideal fractional weights. "
+                               + "This is not a windable thread; it shows how good this line set could be. "
+                               + "Error %2 here vs %3 for the actual thread.")
+                          .arg(root.controller.virtualLines)
+                          .arg(root.controller.virtualError.toFixed(5))
+                          .arg(root.controller.error.toFixed(5))
+                }
             }
 
             Pane {

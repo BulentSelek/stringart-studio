@@ -41,6 +41,7 @@ private slots:
     void parametersPersist();
     void playbackWorkflow();
     void refineWorkflow();
+    void virtualReconstruction();
 
 private:
     void createUi();
@@ -474,6 +475,37 @@ void TestUi::refineWorkflow()
     QCOMPARE(m_controller->resultSegments(), m_controller->segments());
     QCOMPARE(m_controller->playbackPosition(), m_controller->resultSegments());
     qInfo("greedy %.6f -> refined %.6f", greedyError, m_controller->error());
+}
+
+void TestUi::virtualReconstruction()
+{
+    QVERIFY(m_controller->loadImage(m_portrait));
+    m_controller->setProperty("pinCount", 150);
+    m_controller->setProperty("maxSegments", 1200);
+    m_controller->start();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
+    QVERIFY(!m_controller->hasVirtual());
+
+    m_controller->computeVirtual();
+    QVERIFY(m_controller->computingVirtual());
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->computingVirtual(), 60000);
+    QVERIFY2(m_controller->hasVirtual(), qPrintable(m_controller->statusText()));
+    QVERIFY(m_controller->virtualLines() > 0);
+    QVERIFY(m_controller->virtualError() > 0.0);
+    QCOMPARE(m_store->get(QStringLiteral("virtual")).size(), QSize(512, 512));
+    // The view switches to the virtual reconstruction.
+    QTRY_COMPARE(findItem(QStringLiteral("viewTabs"))->property("currentIndex").toInt(), 4);
+    qInfo("virtual %.5f vs thread %.5f", m_controller->virtualError(), m_controller->error());
+
+    QTest::qWait(300);
+    const QByteArray shot = qgetenv("STRINGART_UI_VIRTUAL");
+    if (!shot.isEmpty())
+        QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(shot)));
+
+    // A new result invalidates the virtual reconstruction.
+    m_controller->refineSequence();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
+    QVERIFY(!m_controller->hasVirtual());
 }
 
 QTEST_MAIN(TestUi)

@@ -100,6 +100,13 @@ private:
     Q_PROPERTY(double elapsedSeconds READ elapsedSeconds NOTIFY progressChanged)
     Q_PROPERTY(double threadLengthM READ threadLengthM NOTIFY progressChanged)
 
+    // Algorithm B: virtual least-squares reconstruction of the result's lines.
+    Q_PROPERTY(bool hasVirtual READ hasVirtual NOTIFY virtualChanged)
+    Q_PROPERTY(bool computingVirtual READ computingVirtual NOTIFY virtualChanged)
+    Q_PROPERTY(double virtualError READ virtualError NOTIFY virtualChanged)
+    Q_PROPERTY(int virtualLines READ virtualLines NOTIFY virtualChanged)
+    Q_PROPERTY(int virtualRevision READ virtualRevision NOTIFY virtualChanged)
+
     // Winding playback of the finished sequence (never re-optimizes).
     Q_PROPERTY(int resultSegments READ resultSegments NOTIFY stateChanged)
     Q_PROPERTY(int playbackPosition READ playbackPosition WRITE setPlaybackPosition NOTIFY playbackChanged)
@@ -121,6 +128,8 @@ public:
     Q_INVOKABLE void start();
     // Algorithm C on the current result (continuous thread preserved).
     Q_INVOKABLE void refineSequence();
+    // Algorithm B; result shown separately as a non-manufacturable reconstruction.
+    Q_INVOKABLE void computeVirtual();
     Q_INVOKABLE void pause();
     Q_INVOKABLE void resume();
     Q_INVOKABLE void cancel();
@@ -163,6 +172,11 @@ public:
     [[nodiscard]] double initialError() const { return m_initialError; }
     [[nodiscard]] double elapsedSeconds() const { return m_elapsedSeconds; }
     [[nodiscard]] double threadLengthM() const { return m_threadLengthMm / 1000.0; }
+    [[nodiscard]] bool hasVirtual() const { return m_virtualLines > 0; }
+    [[nodiscard]] bool computingVirtual() const { return m_computingVirtual; }
+    [[nodiscard]] double virtualError() const { return m_virtualError; }
+    [[nodiscard]] int virtualLines() const { return m_virtualLines; }
+    [[nodiscard]] int virtualRevision() const { return m_virtualRevision; }
     [[nodiscard]] int resultSegments() const { return hasResult() ? static_cast<int>(m_resultSequence.size()) - 1 : 0; }
     [[nodiscard]] int playbackPosition() const { return m_playbackPosition; }
     void setPlaybackPosition(int position);
@@ -184,6 +198,7 @@ signals:
     void resultRevisionChanged();
     void progressChanged();
     void playbackChanged();
+    void virtualChanged();
     void playbackSpeedChanged();
 
 private:
@@ -276,6 +291,12 @@ private:
     std::vector<float> m_resultWeights;
     std::vector<int> m_resultSequence;
     std::vector<float> m_resultTransmittance;
+
+    bool m_computingVirtual = false;
+    double m_virtualError = 0.0;
+    int m_virtualLines = 0;
+    int m_virtualRevision = 0;
+    int m_resultGeneration = 0; // invalidates virtual results computed for an older result
 
     std::unique_ptr<sa::PlaybackRenderer> m_playback;
     int m_playbackPosition = 0;
