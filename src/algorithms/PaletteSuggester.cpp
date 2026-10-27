@@ -1,6 +1,6 @@
 #include "algorithms/PaletteSuggester.h"
 
-#include "algorithms/ColorGreedyOptimizer.h"
+#include "algorithms/LayeredColorOptimizer.h"
 #include "core/ColorRenderer.h"
 #include "core/Compositing.h"
 #include "core/ImageProcessor.h"
@@ -80,7 +80,7 @@ std::vector<QColor> PaletteSuggester::candidates(const std::array<std::vector<fl
                                                  std::span<const float> weights, int count,
                                                  const QColor &background, const PaletteSuggestionSettings &settings)
 {
-    if (count < 1 || count > ColorGreedyOptimizer::kMaxColors)
+    if (count < 1 || count > LayeredColorOptimizer::kMaxColors)
         throw std::invalid_argument("palette size must be 1..8");
     const std::size_t pixels = target[0].size();
     if (target[1].size() != pixels || target[2].size() != pixels || weights.size() != pixels)
@@ -175,9 +175,17 @@ std::vector<QColor> PaletteSuggester::candidates(const std::array<std::vector<fl
 
     // Two colours on each cluster's ray: saturated and just deep enough.
     std::vector<QColor> pool{opposite};
-    auto add = [&pool](const QColor &colour) {
-        if (std::find(pool.begin(), pool.end(), colour) == pool.end())
-            pool.push_back(colour);
+    // Near-identical candidates (display-encoded distance below
+    // settings.minCandidateDistance) would waste palette slots and proxy runs.
+    auto add = [&pool, &settings](const QColor &colour) {
+        for (const QColor &existing : pool) {
+            const double dr = existing.redF() - colour.redF();
+            const double dg = existing.greenF() - colour.greenF();
+            const double db = existing.blueF() - colour.blueF();
+            if (std::sqrt(dr * dr + dg * dg + db * db) < settings.minCandidateDistance)
+                return;
+        }
+        pool.push_back(colour);
     };
     for (std::size_t c = 0; c < centres.size(); ++c) {
         std::vector<std::pair<double, double>> distances;
@@ -197,12 +205,12 @@ std::vector<QColor> PaletteSuggester::candidates(const std::array<std::vector<fl
 
 std::vector<QColor> PaletteSuggester::suggest(const RgbImage &image, const FrameSpec &frame,
                                               const OptimizationConfig &config, int workingSize, int count,
-                                              const QColor &background, std::stop_token stop,
+                                              const QColor &background, LayerOrder order, std::stop_token stop,
                                               const Progress &progress, const PaletteSuggestionSettings &settings)
 {
     if (image.isNull())
         throw std::invalid_argument("no target image");
-    if (count < 1 || count > ColorGreedyOptimizer::kMaxColors)
+    if (count < 1 || count > LayeredColorOptimizer::kMaxColors)
         throw std::invalid_argument("palette size must be 1..8");
 
     // Proxy frame: fewer pins (custom frames keep every k-th pin).
@@ -266,7 +274,14 @@ std::vector<QColor> PaletteSuggester::suggest(const RgbImage &image, const Frame
         total += poolSize - slot;            // forward selection
     int done = 0;
     auto evaluate = [&](const std::vector<QColor> &palette) {
-        ColorGreedyOptimizer optimizer(target, palette, background);
+        // Layered as in the real run and with its layer order (it decides which
+        // palette wins); one refinement pass for speed. Without refinement the
+        // proxy misranks palettes: the held-back budget is what lets small dark
+        // areas get their threads.
+        LayeredColorSettings layered;
+        layered.order = order;
+        layered.refinePasses = 1;
+        LayeredColorOptimizer optimizer(target, palette, background, layered);
         const double error = optimizer.optimize(problem, proxyConfig, stop).finalError;
         if (progress)
             progress(++done, total);

@@ -557,8 +557,7 @@ void TestUi::colourWorkflow()
     const QImage result = m_store->get(QStringLiteral("result"));
     QVERIFY(result.pixelColor(110, 256).red() > result.pixelColor(110, 256).blue());
     QVERIFY(result.pixelColor(400, 256).blue() > result.pixelColor(400, 256).red());
-    // Layered by default: the spool changes only between colours.
-    QVERIFY(m_controller->property("layeredColors").toBool());
+    // Layered: the spool changes only between colours.
     m_controller->setPlaybackPosition(0);
     const QVariantList steps = m_controller->stepsAhead(m_controller->resultSegments());
     QCOMPARE(steps.size(), m_controller->resultSegments());

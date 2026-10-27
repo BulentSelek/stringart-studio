@@ -63,6 +63,8 @@ struct LayeredColorSettings
 class LayeredColorOptimizer final : public IOptimizer
 {
 public:
+    static constexpr int kMaxColors = 8;
+
     // `target`: display-encoded r, g, b planes (problem.target is ignored).
     LayeredColorOptimizer(std::array<std::vector<float>, 3> target, std::vector<QColor> palette, QColor background,
                           LayeredColorSettings settings = {});
@@ -81,15 +83,16 @@ public:
     // Palette indices from the bottom layer to the top layer (Auto: light to dark).
     [[nodiscard]] static std::vector<int> layerOrder(std::span<const QColor> palette, LayerOrder order);
 
-    // Order actually used by the last optimize() call.
-    [[nodiscard]] const std::vector<int> &usedOrder() const noexcept { return m_usedOrder; }
+    // Weighted SSE over the three display-encoded channels of an interleaved
+    // linear RGB buffer; the reported error divides it by 3 * sum(weights).
+    [[nodiscard]] static double weightedSse(std::span<const float> rgb, const std::array<std::vector<float>, 3> &target,
+                                            std::span<const float> weights) noexcept;
 
 private:
     std::array<std::vector<float>, 3> m_target;
     std::vector<QColor> m_palette;
     QColor m_background;
     LayeredColorSettings m_settings;
-    std::vector<int> m_usedOrder;
 };
 
 } // namespace sa

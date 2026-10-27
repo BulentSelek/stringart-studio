@@ -37,8 +37,7 @@ struct ProjectData
     bool colorMode = false;
     std::vector<QColor> palette;
     QColor colorBackground = Qt::white;
-    bool layeredColors = true; // wound colour by colour; false = interleaved (spool changes anywhere)
-    int layerOrder = 0;        // 0 auto, 1 light to dark, 2 dark to light, 3 palette order (= sa::LayerOrder)
+    int layerOrder = 0; // layers: 0 auto, 1 light to dark, 2 dark to light, 3 palette order (= sa::LayerOrder)
 
     std::vector<int> sequence;           // single-colour result; empty = no result
     std::vector<ColorStep> colorSteps;   // multi-colour result in global winding order

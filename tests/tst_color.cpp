@@ -1,4 +1,3 @@
-#include "algorithms/ColorGreedyOptimizer.h"
 #include "algorithms/GreedyOptimizer.h"
 #include "algorithms/LayeredColorOptimizer.h"
 #include "core/ColorRenderer.h"
@@ -72,9 +71,8 @@ class TestColor : public QObject
 
 private slots:
     void singleBlackMatchesGrayscale();
-    void matchesBruteForce();
-    void twoColourImage();
-    void renderMatchesOptimizer();
+    void layerMatchesBruteForce();
+    void whiteBrightensGreyBoard();
     void invalidInput();
     void playbackMatchesRenderer();
     void colourExports();
@@ -98,8 +96,10 @@ void TestColor::singleBlackMatchesGrayscale()
     config.maxSegments = 300;
     config.minPinSeparation = 8;
     const StringArtResult gray = GreedyOptimizer().optimize(setup.problem, config);
+    LayeredColorSettings settings;
+    settings.refinePasses = 0; // one layer, whole budget: plain greedy on the RGB objective
     const StringArtResult color =
-        ColorGreedyOptimizer(setup.target, {Qt::black}, Qt::white).optimize(setup.problem, config);
+        LayeredColorOptimizer(setup.target, {Qt::black}, Qt::white, settings).optimize(setup.problem, config);
     QCOMPARE(color.colorSteps.size(), gray.sequence.size() - 1);
     for (std::size_t i = 0; i < color.colorSteps.size(); ++i) {
         QCOMPARE(color.colorSteps[i].from, gray.sequence[i]);
@@ -108,84 +108,56 @@ void TestColor::singleBlackMatchesGrayscale()
     QVERIFY(std::abs(color.finalError - gray.finalError) < 1e-6);
 }
 
-void TestColor::matchesBruteForce()
+void TestColor::layerMatchesBruteForce()
 {
     const ColorSetup setup = makeSetup(twoColorImage(64), 32, 18);
     OptimizationConfig config;
-    config.maxSegments = 12;
+    config.maxSegments = 14;
     config.minPinSeparation = 3;
     config.threadOpacity = 0.4f;
     const std::vector<QColor> palette{QColor(200, 30, 30), QColor(30, 40, 200), Qt::black};
+    LayeredColorSettings settings;
+    settings.order = LayerOrder::Palette;
+    settings.refinePasses = 0;
     const StringArtResult result =
-        ColorGreedyOptimizer(setup.target, palette, Qt::white).optimize(setup.problem, config);
+        LayeredColorOptimizer(setup.target, palette, Qt::white, settings).optimize(setup.problem, config);
 
-    // Reference: render every candidate step and evaluate the full objective.
+    // Reference: each layer picks, step by step, the line whose full re-render
+    // has the lowest error (layers above do not exist yet when it is built).
+    // Layer lengths are taken from the result (they come from the budgets).
+    std::vector<int> lengths(palette.size(), 0);
+    for (const ColorStep &step : result.colorSteps)
+        ++lengths[static_cast<std::size_t>(step.color)];
     std::vector<ColorStep> steps;
-    std::vector<int> current(palette.size(), 0);
-    std::vector<std::set<std::pair<int, int>>> used(palette.size());
     const PinLayout &pins = setup.problem.pins;
-    for (int s = 0; s < config.maxSegments; ++s) {
-        double bestError = std::numeric_limits<double>::infinity();
-        ColorStep best{-1, -1, -1};
-        for (int c = 0; c < static_cast<int>(palette.size()); ++c) {
+    for (int c = 0; c < static_cast<int>(palette.size()); ++c) {
+        int current = config.startPin;
+        std::set<std::pair<int, int>> used;
+        for (int s = 0; s < lengths[static_cast<std::size_t>(c)]; ++s) {
+            double bestError = std::numeric_limits<double>::infinity();
+            ColorStep best{-1, -1, -1};
             for (int j = 0; j < pins.pinCount(); ++j) {
-                const int from = current[static_cast<std::size_t>(c)];
-                if (pins.separation(from, j) < 3 || used[static_cast<std::size_t>(c)].contains(std::minmax(from, j)))
+                if (pins.separation(current, j) < 3 || used.contains(std::minmax(current, j)))
                     continue;
                 std::vector<ColorStep> trial = steps;
-                trial.push_back({c, from, j});
+                trial.push_back({c, current, j});
                 const std::vector<float> rgb =
                     ColorRenderer::renderRgb(pins, trial, palette, Qt::white, config.threadWidth, config.threadOpacity);
-                const double error = ColorGreedyOptimizer::weightedSse(rgb, setup.target, setup.problem.weights);
+                const double error = LayeredColorOptimizer::weightedSse(rgb, setup.target, setup.problem.weights);
                 if (error < bestError - 1e-9) {
                     bestError = error;
-                    best = {c, from, j};
+                    best = {c, current, j};
                 }
             }
+            steps.push_back(best);
+            used.insert(std::minmax(best.from, best.to));
+            current = best.to;
         }
-        steps.push_back(best);
-        used[static_cast<std::size_t>(best.color)].insert(std::minmax(best.from, best.to));
-        current[static_cast<std::size_t>(best.color)] = best.to;
     }
     QCOMPARE(result.colorSteps, steps);
 }
 
-void TestColor::twoColourImage()
-{
-    const ColorSetup setup = makeSetup(twoColorImage(256), 128, 120);
-    OptimizationConfig config;
-    config.maxSegments = 1500;
-    config.minPinSeparation = 10;
-    const std::vector<QColor> palette{QColor(200, 30, 30), QColor(30, 40, 200)};
-    const StringArtResult result =
-        ColorGreedyOptimizer(setup.target, palette, Qt::white).optimize(setup.problem, config);
-    verifyThreads(result, setup.problem.pins, config, 2);
-    QVERIFY(result.finalError < 0.6 * result.initialError);
-
-    // Red threads mostly end on the left half, blue ones on the right.
-    int redLeft = 0, redCount = 0, blueRight = 0, blueCount = 0;
-    for (const ColorStep &step : result.colorSteps) {
-        const double midX = (setup.problem.pins.pin(step.from).x + setup.problem.pins.pin(step.to).x) / 2.0;
-        if (step.color == 0) {
-            ++redCount;
-            redLeft += midX < 64.0;
-        } else {
-            ++blueCount;
-            blueRight += midX > 64.0;
-        }
-    }
-    QVERIFY(redCount > 50 && blueCount > 50);
-    QVERIFY2(redLeft > 0.8 * redCount && blueRight > 0.8 * blueCount,
-             qPrintable(QStringLiteral("red %1/%2 blue %3/%4").arg(redLeft).arg(redCount).arg(blueRight).arg(blueCount)));
-    // Centre of each half shows its colour.
-    const QImage image = ColorRenderer::toImage(result.rgb, 128, 128);
-    const QColor left = image.pixelColor(30, 64);
-    const QColor right = image.pixelColor(98, 64);
-    QVERIFY(left.red() > left.blue());
-    QVERIFY(right.blue() > right.red());
-}
-
-void TestColor::renderMatchesOptimizer()
+void TestColor::whiteBrightensGreyBoard()
 {
     const ColorSetup setup = makeSetup(synthetic::portrait(128), 96, 60);
     OptimizationConfig config;
@@ -194,10 +166,13 @@ void TestColor::renderMatchesOptimizer()
     config.threadWidth = 1.4;
     const std::vector<QColor> palette{Qt::black, QColor(150, 90, 60), Qt::white};
     const StringArtResult result =
-        ColorGreedyOptimizer(setup.target, palette, QColor(128, 128, 128)).optimize(setup.problem, config);
+        LayeredColorOptimizer(setup.target, palette, QColor(128, 128, 128)).optimize(setup.problem, config);
     verifyThreads(result, setup.problem.pins, config, 3);
-    QCOMPARE(result.rgb, ColorRenderer::renderRgb(setup.problem.pins, result.colorSteps, palette,
-                                                  QColor(128, 128, 128), config.threadWidth, config.threadOpacity));
+    const std::vector<float> rendered = ColorRenderer::renderRgb(setup.problem.pins, result.colorSteps, palette,
+                                                                 QColor(128, 128, 128), config.threadWidth,
+                                                                 config.threadOpacity);
+    for (std::size_t i = 0; i < rendered.size(); ++i)
+        QVERIFY(std::abs(rendered[i] - result.rgb[i]) < 1e-4f);
     QVERIFY(result.finalError < result.initialError);
     // White thread is useful on a gray background (it can brighten).
     QVERIFY(std::any_of(result.colorSteps.begin(), result.colorSteps.end(),
@@ -210,7 +185,7 @@ void TestColor::invalidInput()
     OptimizationConfig config;
     config.minPinSeparation = 3;
     auto run = [&](std::vector<QColor> palette, std::array<std::vector<float>, 3> target) {
-        static_cast<void>(ColorGreedyOptimizer(target, palette, Qt::white).optimize(setup.problem, config));
+        static_cast<void>(LayeredColorOptimizer(target, palette, Qt::white).optimize(setup.problem, config));
     };
     QVERIFY_THROWS_EXCEPTION(std::invalid_argument, run({}, setup.target));
     QVERIFY_THROWS_EXCEPTION(std::invalid_argument, run(std::vector<QColor>(9, Qt::black), setup.target));
@@ -223,7 +198,7 @@ namespace {
 
 std::vector<ColorStep> sampleSteps()
 {
-    // Two threads starting at pin 0, interleaved.
+    // Two threads starting at pin 0 (the format allows any order of colours).
     return {{0, 0, 10}, {1, 0, 15}, {0, 10, 25}, {1, 15, 3}, {0, 25, 8}};
 }
 
@@ -341,20 +316,29 @@ void TestColor::layeredWoundInBlocks()
     config.maxSegments = 1800;
     config.minPinSeparation = 10;
     const std::vector<QColor> palette{QColor(200, 30, 30), QColor(30, 40, 200), Qt::black};
-    LayeredColorOptimizer optimizer(setup.target, palette, Qt::white);
-    const StringArtResult result = optimizer.optimize(setup.problem, config);
+    const StringArtResult result =
+        LayeredColorOptimizer(setup.target, palette, Qt::white).optimize(setup.problem, config);
     verifyThreads(result, setup.problem.pins, config, 3);
     QVERIFY(static_cast<int>(result.colorSteps.size()) <= config.maxSegments);
-    // One block per colour: the spool changes at most twice.
     QVERIFY(colourChanges(result.colorSteps) <= 2);
-    QCOMPARE(optimizer.usedOrder().size(), std::size_t{3});
-    for (std::size_t i = 1; i < result.colorSteps.size(); ++i) {
-        if (result.colorSteps[i].color != result.colorSteps[i - 1].color) {
-            const auto first = std::find(optimizer.usedOrder().begin(), optimizer.usedOrder().end(),
-                                         result.colorSteps[i - 1].color);
-            QCOMPARE(*(first + 1), result.colorSteps[i].color); // blocks follow the layer order
-        }
+    // Each colour forms one block (wound once), in light-to-dark or dark-to-light order.
+    std::vector<int> blocks;
+    for (const ColorStep &step : result.colorSteps) {
+        if (blocks.empty() || blocks.back() != step.color)
+            blocks.push_back(step.color);
     }
+    std::vector<int> sorted = blocks;
+    std::sort(sorted.begin(), sorted.end());
+    QVERIFY(std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end());
+    const auto light = LayeredColorOptimizer::layerOrder(palette, LayerOrder::LightToDark);
+    const auto dark = LayeredColorOptimizer::layerOrder(palette, LayerOrder::DarkToLight);
+    auto follows = [&blocks](const std::vector<int> &order) {
+        std::vector<int> kept;
+        std::copy_if(order.begin(), order.end(), std::back_inserter(kept),
+                     [&blocks](int c) { return std::find(blocks.begin(), blocks.end(), c) != blocks.end(); });
+        return kept == blocks;
+    };
+    QVERIFY(follows(light) || follows(dark));
     // The returned picture is what the renderer makes of the steps.
     const std::vector<float> rendered = ColorRenderer::renderRgb(setup.problem.pins, result.colorSteps, palette,
                                                                  Qt::white, config.threadWidth, config.threadOpacity);
@@ -363,7 +347,7 @@ void TestColor::layeredWoundInBlocks()
     for (std::size_t i = 0; i < rendered.size(); ++i)
         maxDifference = std::max(maxDifference, std::abs(rendered[i] - result.rgb[i]));
     QVERIFY2(maxDifference < 1e-4f, qPrintable(QString::number(maxDifference)));
-    QVERIFY(std::abs(result.finalError - ColorGreedyOptimizer::weightedSse(rendered, setup.target,
+    QVERIFY(std::abs(result.finalError - LayeredColorOptimizer::weightedSse(rendered, setup.target,
                                                                           setup.problem.weights)
                                              / (3.0 * std::accumulate(setup.problem.weights.begin(),
                                                                       setup.problem.weights.end(), 0.0)))
@@ -474,24 +458,15 @@ void TestColor::layeredProjectSettings()
     project.config.minPinSeparation = 1;
     project.colorMode = true;
     project.palette = {Qt::black, Qt::white};
-    project.layeredColors = true;
-    project.layerOrder = 2;
-    ProjectData loaded = ProjectFile::fromJson(ProjectFile::toJson(project, false, false));
-    QVERIFY(loaded.layeredColors);
-    QCOMPARE(loaded.layerOrder, 2);
-    project.layeredColors = false;
-    project.layerOrder = 3;
-    loaded = ProjectFile::fromJson(ProjectFile::toJson(project, false, false));
-    QVERIFY(!loaded.layeredColors);
-    QCOMPARE(loaded.layerOrder, 3);
-    // Files without a method predate layered colours: interleaved.
-    QByteArray json = ProjectFile::toJson(project, false, false);
-    json.replace("\"method\": \"interleaved\",", "");
-    json.replace("\"method\":\"interleaved\",", "");
-    QVERIFY(!json.contains("method"));
-    QVERIFY(!ProjectFile::fromJson(json).layeredColors);
+    for (int order = 0; order < 4; ++order) {
+        project.layerOrder = order;
+        QCOMPARE(ProjectFile::fromJson(ProjectFile::toJson(project, false, false)).layerOrder, order);
+    }
     QByteArray bad = ProjectFile::toJson(project, false, false);
-    bad.replace("\"interleaved\"", "\"sideways\"");
+    QVERIFY(bad.contains("\"palette\""));
+    bad.replace("\"layerOrder\": \"palette\"", "\"layerOrder\": \"sideways\"");
+    bad.replace("\"layerOrder\":\"palette\"", "\"layerOrder\":\"sideways\"");
+    QVERIFY(bad.contains("sideways"));
     QVERIFY_THROWS_EXCEPTION(std::runtime_error, (void)ProjectFile::fromJson(bad));
 }
 

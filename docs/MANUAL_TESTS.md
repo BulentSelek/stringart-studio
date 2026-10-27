@@ -36,8 +36,8 @@ own photos.
       re-running.
 - [ ] *Multi-colour threads*: presets, colour picker on a swatch, *Add
       colour…* (max 8), remove (min 1), board colour picker.
-- [ ] *Winding: Layered* (default) and *Layer order*: the winding guide and
-      winding mode show only a few thread changes; *Interleaved* still works.
+- [ ] *Layer order* (Auto, light to dark, dark to light, palette order): the
+      winding guide and winding mode show only a few thread changes.
 - [ ] *From image … Suggest* on a colourful photo: progress in the button,
       clicking again cancels, the palette is replaced when it finishes.
 

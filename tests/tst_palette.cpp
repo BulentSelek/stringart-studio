@@ -1,4 +1,4 @@
-#include "algorithms/ColorGreedyOptimizer.h"
+#include "algorithms/LayeredColorOptimizer.h"
 #include "algorithms/PaletteSuggester.h"
 #include "core/ImageProcessor.h"
 #include "core/OptimizationProblem.h"
@@ -127,7 +127,7 @@ void TestPalette::suggestIsDeterministic()
     const RgbImage image = target();
     int calls = 0;
     int lastTotal = 0;
-    const std::vector<QColor> a = PaletteSuggester::suggest(image, frame(), config(), kSize, 2, Qt::white, {},
+    const std::vector<QColor> a = PaletteSuggester::suggest(image, frame(), config(), kSize, 2, Qt::white, LayerOrder::Auto, {},
                                                             [&](int done, int total) {
                                                                 ++calls;
                                                                 QVERIFY(done <= total);
@@ -150,7 +150,7 @@ void TestPalette::suggestBeatsAMismatchedPalette()
     problem.target.assign(problem.weights.size(), 1.0f);
     problem.pins = layout;
     auto error = [&](const std::vector<QColor> &palette) {
-        ColorGreedyOptimizer optimizer(image.channels, palette, Qt::white);
+        LayeredColorOptimizer optimizer(image.channels, palette, Qt::white);
         return optimizer.optimize(problem, config()).finalError;
     };
     const std::vector<QColor> suggested = PaletteSuggester::suggest(image, frame(), config(), kSize, 3, Qt::white);
@@ -165,7 +165,7 @@ void TestPalette::stopReturnsEarly()
     std::stop_source stop;
     stop.request_stop();
     const std::vector<QColor> palette =
-        PaletteSuggester::suggest(target(), frame(), config(), kSize, 3, Qt::white, stop.get_token());
+        PaletteSuggester::suggest(target(), frame(), config(), kSize, 3, Qt::white, LayerOrder::Auto, stop.get_token());
     QVERIFY(palette.empty());
 }
 

@@ -2,7 +2,6 @@
 
 #include "ImageStore.h"
 #include "OptimizationWorker.h"
-#include "algorithms/ColorGreedyOptimizer.h"
 #include "algorithms/GreedyOptimizer.h"
 #include "algorithms/LayeredColorOptimizer.h"
 #include "algorithms/LeastSquaresOptimizer.h"
@@ -197,7 +196,6 @@ sa::ProjectData ProjectController::currentSettings() const
     p.colorMode = m_colorMode;
     p.palette = m_palette;
     p.colorBackground = m_colorBackground;
-    p.layeredColors = m_layeredColors;
     p.layerOrder = m_layerOrder;
     return p;
 }
@@ -250,7 +248,6 @@ void ProjectController::applySettings(const sa::ProjectData &p)
     if (!p.palette.empty())
         m_palette = p.palette;
     m_colorBackground = p.colorBackground;
-    m_layeredColors = p.layeredColors;
     m_layerOrder = std::clamp(p.layerOrder, 0, 3);
     emit colorModeChanged();
     emit paletteChanged();
@@ -356,7 +353,7 @@ QVariantList ProjectController::palette() const
 
 void ProjectController::addPaletteColor(const QColor &color)
 {
-    if (static_cast<int>(m_palette.size()) >= sa::ColorGreedyOptimizer::kMaxColors || !color.isValid())
+    if (static_cast<int>(m_palette.size()) >= sa::LayeredColorOptimizer::kMaxColors || !color.isValid())
         return;
     m_palette.push_back(color);
     emit paletteChanged();
@@ -383,7 +380,7 @@ void ProjectController::setPalette(const QVariantList &colors, const QColor &bac
     std::vector<QColor> palette;
     for (const QVariant &v : colors) {
         const QColor c = v.value<QColor>();
-        if (c.isValid() && static_cast<int>(palette.size()) < sa::ColorGreedyOptimizer::kMaxColors)
+        if (c.isValid() && static_cast<int>(palette.size()) < sa::LayeredColorOptimizer::kMaxColors)
             palette.push_back(c);
     }
     if (palette.empty() || !background.isValid())
@@ -405,7 +402,7 @@ void ProjectController::suggestPalette(int count)
         setStatus(tr("Load an image and turn on multi-colour threads to get a palette suggestion."));
         return;
     }
-    count = std::clamp(count, 1, sa::ColorGreedyOptimizer::kMaxColors);
+    count = std::clamp(count, 1, sa::LayeredColorOptimizer::kMaxColors);
     m_suggestionStop = std::stop_source();
     m_suggestingPalette = true;
     m_suggestionProgress = 0.0;
@@ -419,11 +416,13 @@ void ProjectController::suggestPalette(int count)
     const QColor background = m_colorBackground;
     QFuture<Outcome> task =
         QtConcurrent::run([this, image = m_processedRgb, frame = frameSpec(), config = currentSettings().config,
-                           workingSize = m_workingSize, count, background, stop = m_suggestionStop.get_token()] {
+                           workingSize = m_workingSize, count, background,
+                           order = static_cast<sa::LayerOrder>(std::clamp(m_layerOrder, 0, 3)),
+                           stop = m_suggestionStop.get_token()] {
             Outcome outcome;
             try {
                 outcome.palette = sa::PaletteSuggester::suggest(
-                    image, frame, config, workingSize, count, background, stop, [this](int done, int total) {
+                    image, frame, config, workingSize, count, background, order, stop, [this](int done, int total) {
                         QMetaObject::invokeMethod(this, [this, done, total] {
                             m_suggestionProgress = static_cast<double>(done) / std::max(1, total);
                             emit suggestionChanged();
@@ -575,16 +574,10 @@ void ProjectController::start()
             if (m_processedRgb.isNull())
                 throw std::invalid_argument("colour image is not ready");
             m_resultColorTarget = m_processedRgb.channels;
-            std::unique_ptr<sa::IOptimizer> optimizer;
-            if (settings.layeredColors) {
-                sa::LayeredColorSettings layered;
-                layered.order = static_cast<sa::LayerOrder>(std::clamp(settings.layerOrder, 0, 3));
-                optimizer = std::make_unique<sa::LayeredColorOptimizer>(m_processedRgb.channels, settings.palette,
-                                                                        settings.colorBackground, layered);
-            } else {
-                optimizer = std::make_unique<sa::ColorGreedyOptimizer>(m_processedRgb.channels, settings.palette,
-                                                                       settings.colorBackground);
-            }
+            sa::LayeredColorSettings layered;
+            layered.order = static_cast<sa::LayerOrder>(std::clamp(settings.layerOrder, 0, 3));
+            auto optimizer = std::make_unique<sa::LayeredColorOptimizer>(m_processedRgb.channels, settings.palette,
+                                                                         settings.colorBackground, layered);
             m_worker->start(std::move(optimizer), std::move(problem), settings.config, renderStyle(),
                             m_processedRgb.channels);
         } else {

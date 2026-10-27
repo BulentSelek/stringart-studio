@@ -30,8 +30,6 @@ qt_add_library(stringart_core STATIC
     core/ThreadRenderer.h
     core/WorkshopDocuments.cpp
     core/WorkshopDocuments.h
-    algorithms/ColorGreedyOptimizer.cpp
-    algorithms/ColorGreedyOptimizer.h
     algorithms/GreedyOptimizer.cpp
     algorithms/GreedyOptimizer.h
     algorithms/IOptimizer.h

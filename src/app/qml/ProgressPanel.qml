@@ -174,9 +174,7 @@ Pane {
                     opacity: 0.6
                     font.pixelSize: 11
                     text: root.controller.resultIsColor
-                          ? (root.controller.layeredColors
-                             ? qsTr("Each colour is one continuous thread, wound layer by layer from the bottom; the spool changes only between layers.")
-                             : qsTr("Each colour is one continuous thread; the interleaved winding order switches between spools often."))
+                          ? qsTr("Each colour is one continuous thread, wound layer by layer from the bottom; the spool changes only between layers.")
                           : qsTr("The result is a single continuous thread: every segment starts at the previous segment's end pin.")
                 }
 

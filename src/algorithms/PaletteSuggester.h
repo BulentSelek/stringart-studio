@@ -1,5 +1,6 @@
 #pragma once
 
+#include "algorithms/LayeredColorOptimizer.h"
 #include "core/GrayImage.h"
 #include "core/OptimizationConfig.h"
 #include "core/PinGeometry.h"
@@ -23,6 +24,7 @@ struct PaletteSuggestionSettings
     int extraClusters = 2;     // clusters beyond the requested colour count
     double reach = 0.7;        // coverage assumed for the "just deep enough" variant
     double minDistance = 0.02; // linear RGB distance below which a pixel counts as background
+    double minCandidateDistance = 0.12; // display-encoded RGB distance below which candidates count as equal
     // Proxy runs used to score palettes.
     int proxySize = 112;       // long side of the proxy canvas in pixels
     int maxProxyPins = 120;
@@ -42,7 +44,8 @@ struct PaletteSuggestionSettings
 //    background) is always a candidate.
 // 2. Selection (`suggest`). Colours are chosen one at a time: each slot gets
 //    the candidate that, together with the colours chosen so far, gives the
-//    lowest error of a real ColorGreedyOptimizer run on a small proxy of the
+//    lowest error of a real LayeredColorOptimizer run (the run's layer
+//    order, one refinement pass for speed) on a small proxy of the
 //    problem (canvas `proxySize`, at most `maxProxyPins` pins, segment count
 //    scaled so the thread density matches), followed by one pass that tries
 //    to replace each chosen colour by every other candidate. This scores
@@ -66,12 +69,14 @@ public:
     using Progress = std::function<void(int, int)>;
 
     // `image`: the processed colour target at any resolution (padding already
-    // white); `frame` and `config` describe the intended run. Returns `count`
+    // white); `frame`, `config` and `order` describe the intended run (the
+    // layer order changes which palette is best). Returns `count`
     // colours in order of selection, or fewer when the pool is smaller or the
     // search is stopped (then the colours chosen so far).
     [[nodiscard]] static std::vector<QColor> suggest(const RgbImage &image, const FrameSpec &frame,
                                                      const OptimizationConfig &config, int workingSize, int count,
-                                                     const QColor &background, std::stop_token stop = {},
+                                                     const QColor &background, LayerOrder order = LayerOrder::Auto,
+                                                     std::stop_token stop = {},
                                                      const Progress &progress = {},
                                                      const PaletteSuggestionSettings &settings = {});
 };

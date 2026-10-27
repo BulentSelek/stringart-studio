@@ -86,8 +86,8 @@ honoured.
 ./build/src/cli/stringart-cli portrait.jpg --colors "#000000,#7a4a2a,#c9a27a" --background "#f4ecd8" \
     --png colour.png --csv colour.csv
 ./build/src/cli/stringart-cli photo.jpg --colors "#000000,#ffffff,#c0392b,#1f4e8c,#f0c000" \
-    --segments 8000 --layer-order auto --png colour.png   # layered (default)
-./build/src/cli/stringart-cli photo.jpg --colors auto:3 --color-method interleaved --png colour.png
+    --segments 8000 --layer-order auto --png colour.png
+./build/src/cli/stringart-cli photo.jpg --colors auto:3 --png colour.png
 ./build/src/cli/stringart-cli portrait.jpg --template-pdf pins.pdf --template-paper a4 \
     --guide-pdf winding.pdf
 ./build/src/cli/stringart-cli --help

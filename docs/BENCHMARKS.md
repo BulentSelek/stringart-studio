@@ -44,17 +44,17 @@ Observations:
 - At 1024 px, 4000 segments of a 1 px thread do not reach the no-improvement
   point; more segments or a wider thread are needed for comparable density.
 
-Multi-colour greedy (CLI, 512 px, 240 pins, max 4000 steps, same portrait,
-2026-10-27):
+Multi-colour, layered (CLI, 512 px, 240 pins, max 4000 steps, same
+portrait, defaults: Auto order, 2 refinement passes, 2026-10-27):
 
 | palette | steps | runtime (s) | final error |
 |---|---|---|---|
-| black (via colour path) | 3069 | 0.87 | 0.03537 |
-| black, brown, beige on cream | 3536 | 2.20 | 0.03320 |
+| black (one layer: no refinement, one order) | 3069 | 1.04 | 0.03537 |
+| black, brown, beige on cream | 3669 | 5.78 | 0.03323 |
 
-The colour path scores three channels per pixel and every colour's
-candidates each step, so runtime grows roughly with the number of colours.
-(The single-colour path is faster for one colour: 0.50 s at 200 pins above.)
+With several colours Auto builds two layer orders and each refinement pass
+rebuilds every layer, so the runtime is several single-colour runs. More
+results in ARCHITECTURE.md (*Multi-colour threads*).
 
 Sequence refinement (Algorithm C) and the virtual least-squares
 reconstruction (Algorithm B) are measured in ARCHITECTURE.md.

@@ -26,8 +26,8 @@ src/
 │   └── ProjectFile.*          JSON project format, custom pin CSV import
 ├── algorithms/
 │   ├── IOptimizer.h           common optimizer interface
-│   ├── ColorGreedyOptimizer.* multi-colour greedy
 │   ├── GreedyOptimizer.*      Algorithm A
+│   ├── LayeredColorOptimizer.* multi-colour threads wound in layers
 │   ├── LeastSquaresOptimizer.* Algorithm B (virtual)
 │   ├── PaletteSuggester.*     thread colours from the image (multi-colour)
 │   └── SequenceOptimizer.*    Algorithm C
@@ -201,32 +201,15 @@ of the optimization. Compositing ("over", linear RGB): a thread of colour `k`
 covering a fraction `β = a·c` of a pixel shows its own colour there,
 `C' = C·(1 − β) + k·β`, starting from the board colour. For one colour this
 equals the single-colour model; with several colours the order matters
-(later threads lie on top), so the result is a **global winding order** of
-steps `(colour, from pin, to pin)` in which each colour forms one continuous
-thread from the start pin. Winding follows the step order, switching spools
-when the colour changes; each thread stays attached at its current pin.
-Light threads can brighten a dark board (e.g. white on grey).
+(later threads lie on top). Light threads can brighten a dark board (e.g.
+white on grey). Objective: `Σ w Σ_c (enc(C_c) − g_c)²` against the
+display-encoded RGB target, reported divided by `3 Σ w` (per-channel
+weighted MSE).
 
-`ColorGreedyOptimizer` scores every valid line from every colour's current
-pin exactly over the line's pixels against the display-encoded RGB target
-(objective `Σ w Σ_c (enc(C_c) − g_c)²`, reported as a per-channel weighted
-MSE), with deterministic ties (colour, then pin). Tests: identical to the
-single-colour optimizer for one black thread, identical to a brute-force
-re-render search, per-colour continuity, and colour placement on a two-colour
-image. Exports: CSV with `color` / `color_hex` columns and per-colour
-cumulative length, SVG with one stroke colour per line, project/JSON with
-`color.palette` and `result.steps` (continuity is validated on load).
-Sequence refinement and the virtual least-squares reconstruction are
-single-colour only.
-
-### Layered colours (default)
-
-The interleaved order above fits the picture well but switches spools
-thousands of times, which nobody winds by hand. Colour thread portraits
-(e.g. Ani and Andrey Abakumov's: black and white plus a few colours, about
-8000 lines) are wound colour by colour. `LayeredColorOptimizer` produces
-that: each colour is one continuous thread wound completely before the
-next, so the spool changes only between layers.
+Colour thread portraits (e.g. Ani and Andrey Abakumov's: black and white
+plus a few colours, about 8000 lines) are wound colour by colour, so
+`LayeredColorOptimizer` makes each colour one continuous thread wound
+completely before the next: the spool changes only between layers.
 
 - A single-colour layer maps the canvas below it to `x·T + k·(1 − T)`, a
   per-pixel affine map. For layer `c`, with `R` the composite of the layers
@@ -234,7 +217,9 @@ next, so the spool changes only between layers.
   `F = A·(R·T_c + k_c·(1 − T_c)) + B`.
 - A layer is built like Algorithm A (one continuous thread from the start
   pin), but every candidate line is scored by the exact change of the full
-  RGB objective through that map, over the line's pixels only.
+  RGB objective through that map, over the line's pixels only. With one
+  black thread on white and a grey target this is exactly Algorithm A
+  (tested), and each step equals a brute-force re-render search (tested).
 - Segment budgets: the target is dithered (serpentine Floyd–Steinberg in
   linear RGB) to the palette plus the board colour; each colour's share of
   the dithered picture sets its budget. The first build uses half of each
@@ -245,23 +230,29 @@ next, so the spool changes only between layers.
   held-back half thus goes where it helps most, not by area.
 - Order: *Auto* builds light-to-dark and dark-to-light and keeps the better
   one; light-to-dark, dark-to-light and palette order can be forced.
-  Later layers lie on top.
+
+The result is a list of steps `(colour, from pin, to pin)`, layer by layer;
+`ColorRenderer::renderRgb` of it reproduces the optimizer's picture
+(tested). Exports: CSV with `color` / `color_hex` columns and per-colour
+cumulative length, SVG with one stroke colour per line, project/JSON with
+`color.palette`, `color.layerOrder` and `result.steps` (per-colour
+continuity is validated on load). Sequence refinement and the virtual
+least-squares reconstruction are single-colour only.
 
 Measured (CLI, 512 px, 240 pins, 6000 steps, palette black, white, red,
-blue, yellow on white, 2026-10-27; error = per-channel weighted MSE):
+blue, yellow on white, 2026-10-27; error = per-channel weighted MSE). The
+first column is the earlier interleaved optimizer (one global greedy over
+all colours, spool changes at almost every step), removed since:
 
-| image | interleaved | layered, first build only | layered (default) | spool changes (layered) |
+| image | interleaved (removed) | layered, first build only | layered | spool changes |
 |---|---|---|---|---|
 | red / blue halves, black disk | 0.03216 (5.4 s) | 0.05475 | 0.03054 (11 s) | 3 |
 | sunset gradient, dark disk | 0.00961 (5.9 s) | 0.01918 | 0.00917 (11 s) | 4 |
 | colour plasma | 0.01609 (6.4 s) | 0.02052 | 0.01728 (10 s) | 4 |
 
-Layered with refinement matches or beats the interleaved order on two of
-three images while needing 3–4 spool changes instead of thousands; the cost
-is about twice the runtime (Auto builds two orders). Tried and dropped:
-layers that match only their own dithered density map (errors 0.049–0.059,
-grey disks) and fixed budgets by area (dark details starve). The palette
-suggester still scores palettes with fast interleaved proxy runs.
+Tried and dropped: layers that match only their own dithered density map
+(errors 0.049–0.059, grey disks) and fixed budgets by area (dark details
+starve).
 
 ### Palette suggestion
 
@@ -276,27 +267,30 @@ colour and run settings (UI: *From image … Suggest*; CLI: `--colors auto:N`).
    enough" colour (95th percentile distance / 0.7); black (white on a dark
    board) is always a candidate.
 2. Selection by the real objective: colours are added one at a time, each
-   the candidate with the lowest error of a `ColorGreedyOptimizer` run on a
+   the candidate with the lowest error of a `LayeredColorOptimizer` run on a
    proxy (canvas 112 px, at most 120 pins, segments scaled to the same thread
-   density), then one pass tries to replace each chosen colour by every
-   other candidate. This captures mixtures, which clustering alone misses.
+   density, the run's layer order, one refinement pass), then one pass tries
+   to replace each chosen colour by every other candidate. This captures
+   mixtures, which clustering alone misses. Near-identical candidates are
+   merged. The proxy needs the layer order and a refinement pass: without
+   them it ranked palettes differently from the full run (it preferred two
+   reds over red and blue on the halves image, and purple over orange on the
+   sunset).
 
 Measured (CLI, 512 px, 200 pins, 3000 steps, synthetic images,
-2026-10-27; error of the full run):
+2026-10-27; error of the full layered run):
 
 | image | black, red, blue (preset) | auto:3 | suggested colours | suggestion time |
 |---|---|---|---|---|
-| red / blue halves, black disk | 0.12084 | 0.11023 | black, red, blue | 2.3 s |
-| sunset gradient, dark disk | 0.04665 | 0.04533 | black, dark red, orange | 2.5 s |
-| colour plasma | 0.09305 | 0.09305 | black, brown, green | 2.3 s |
+| red / blue halves, black disk | 0.12571 | 0.11048 | black, red, blue | 4.7 s |
+| sunset gradient, dark disk | 0.05162 | 0.04705 | black, orange, yellow | 4.7 s |
+| colour plasma | 0.09488 | 0.09556 | black, dark blue, brown | 5.3 s |
 
-On the plasma image both palettes end with the same error: the greedy run
-uses almost only the black thread, since on a white board darkening
-dominates the objective. A coloured board can matter more than the thread
-colours; the suggester keeps the chosen board colour. Asking for more
-colours (auto:5) did not lower the error further on these images. The
-selection is greedy on a proxy, so it is a good starting point, not a
-guaranteed optimum.
+On the plasma image the suggestion is no better than the preset: on a white
+board darkening dominates the objective, so black does most of the work. A
+coloured board can matter more than the thread colours; the suggester keeps
+the chosen board colour. The selection is greedy on a proxy, so it is a good
+starting point, not a guaranteed optimum.
 
 ## Winding playback
 

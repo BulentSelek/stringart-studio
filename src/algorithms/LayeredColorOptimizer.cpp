@@ -1,6 +1,5 @@
 #include "algorithms/LayeredColorOptimizer.h"
 
-#include "algorithms/ColorGreedyOptimizer.h"
 #include "core/ColorRenderer.h"
 #include "core/Compositing.h"
 #include "core/LineCache.h"
@@ -281,6 +280,23 @@ LayeredColorOptimizer::LayeredColorOptimizer(std::array<std::vector<float>, 3> t
 {
 }
 
+double LayeredColorOptimizer::weightedSse(std::span<const float> rgb, const std::array<std::vector<float>, 3> &target,
+                                          std::span<const float> weights) noexcept
+{
+    double sum = 0.0;
+    for (std::size_t p = 0; p < weights.size(); ++p) {
+        if (weights[p] <= 0.0f)
+            continue;
+        double pixel = 0.0;
+        for (std::size_t c = 0; c < 3; ++c) {
+            const double d = static_cast<double>(SrgbEncoder::encode(rgb[3 * p + c])) - target[c][p];
+            pixel += d * d;
+        }
+        sum += weights[p] * pixel;
+    }
+    return sum;
+}
+
 std::vector<int> LayeredColorOptimizer::layerOrder(std::span<const QColor> palette, LayerOrder order)
 {
     std::vector<int> indices(palette.size());
@@ -374,12 +390,14 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
     if (problem.width <= 0 || problem.height <= 0 || problem.weights.size() != pixels
         || layout.canvasWidth() != problem.width || layout.canvasHeight() != problem.height)
         throw std::invalid_argument("problem size, weights and pin canvas must agree");
-    if (m_palette.empty() || static_cast<int>(m_palette.size()) > ColorGreedyOptimizer::kMaxColors)
+    if (m_palette.empty() || static_cast<int>(m_palette.size()) > kMaxColors)
         throw std::invalid_argument("the palette needs 1 to 8 colours");
     if (!m_background.isValid())
         throw std::invalid_argument("invalid background colour");
     if (m_settings.refinePasses < 0)
         throw std::invalid_argument("refinePasses must not be negative");
+    // A single layer has no other layers to adapt to.
+    const int refinePasses = m_palette.size() > 1 ? m_settings.refinePasses : 0;
 
     const auto start = std::chrono::steady_clock::now();
     auto elapsed = [&start] {
@@ -403,16 +421,17 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
     }
     const double totalMass = std::accumulate(mass.begin(), mass.end(), 0.0);
     auto budgetOf = [&](int colour) {
-        return totalMass > 0.0 ? static_cast<int>(std::lround(config.maxSegments * mass[static_cast<std::size_t>(colour)]
-                                                              / totalMass))
-                               : 0;
+        if (totalMass <= 0.0)
+            return 0;
+        const double share = mass[static_cast<std::size_t>(colour)] / totalMass;
+        return static_cast<int>(std::lround(config.maxSegments * share));
     };
 
     const double weightSum = std::accumulate(problem.weights.begin(), problem.weights.end(), 0.0);
     const double normalizer = weightSum > 0.0 ? 1.0 / (3.0 * weightSum) : 0.0;
     const LinearRgb board = toLinearRgb(m_background);
     auto errorOf = [&](std::span<const float> rgb) {
-        return ColorGreedyOptimizer::weightedSse(rgb, m_target, problem.weights) * normalizer;
+        return weightedSse(rgb, m_target, problem.weights) * normalizer;
     };
     std::vector<float> empty = below({}, 0, board, pixels);
     const double initialError = errorOf(empty);
@@ -458,7 +477,7 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
             layer.colour = colour;
             layer.k = toLinearRgb(m_palette[static_cast<std::size_t>(colour)]);
             // Without refinement nothing would use a held-back share.
-            const double share = m_settings.refinePasses > 0 ? m_settings.initialShare : 1.0;
+            const double share = refinePasses > 0 ? m_settings.initialShare : 1.0;
             layer.budget = static_cast<int>(std::lround(share * budgetOf(colour)));
             layer.transmittance.assign(pixels, 1.0f);
             layers.push_back(std::move(layer));
@@ -491,7 +510,7 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
         error = errorOf(picture);
         // Block coordinate descent: rebuild each layer with the others fixed.
         std::vector<float> candidate;
-        for (int pass = 0; pass < m_settings.refinePasses && !stop.stop_requested(); ++pass) {
+        for (int pass = 0; pass < refinePasses && !stop.stop_requested(); ++pass) {
             bool improved = false;
             for (std::size_t i = 0; i < layers.size() && !stop.stop_requested(); ++i) {
                 Layer rebuilt = rebuild(i, candidate, true);
@@ -533,7 +552,6 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
             bestError = error;
             bestLayers = std::move(layers);
             bestPicture = std::move(picture);
-            m_usedOrder = order;
         }
     }
 

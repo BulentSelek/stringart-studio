@@ -1,8 +1,8 @@
-#include "algorithms/ColorGreedyOptimizer.h"
 #include "algorithms/GreedyOptimizer.h"
 #include "algorithms/LayeredColorOptimizer.h"
 #include "algorithms/PaletteSuggester.h"
 #include "algorithms/SequenceOptimizer.h"
+#include "core/ColorRenderer.h"
 #include "core/ExportManager.h"
 #include "core/ImageProcessor.h"
 #include "core/ProjectFile.h"
@@ -94,7 +94,6 @@ int main(int argc, char *argv[])
         {QStringLiteral("csv-units"), QStringLiteral("CSV units: mm or px."), QStringLiteral("unit"), QStringLiteral("mm")},
         {QStringLiteral("svg"), QStringLiteral("Output SVG path (millimetres)."), QStringLiteral("path")},
         {QStringLiteral("json"), QStringLiteral("Output JSON path (settings, pins, sequence)."), QStringLiteral("path")},
-        {QStringLiteral("color-method"), QStringLiteral("Multi-colour method: layered (one colour after another) or interleaved."), QStringLiteral("method"), QStringLiteral("layered")},
         {QStringLiteral("layer-order"), QStringLiteral("Layered colours: auto (try both), light (lightest at the bottom), dark or palette."), QStringLiteral("order"), QStringLiteral("auto")},
         {QStringLiteral("layer-passes"), QStringLiteral("Layered colours: refinement sweeps over the layers."), QStringLiteral("n"), QStringLiteral("2")},
         {QStringLiteral("template-pdf"), QStringLiteral("Output 1:1 pin template PDF path."), QStringLiteral("path")},
@@ -188,13 +187,20 @@ int main(int argc, char *argv[])
                 sa::ImageProcessor::prepareBaseRgb(original, pins.canvasWidth(), pins.canvasHeight(), {}, rotation),
                 tone);
         }
+        const QString orderName = parser.value(QStringLiteral("layer-order"));
+        if (orderName != u"auto" && orderName != u"light" && orderName != u"dark" && orderName != u"palette")
+            fail(QStringLiteral("--layer-order must be auto, light, dark or palette"));
+        const sa::LayerOrder layerOrder = orderName == u"light"  ? sa::LayerOrder::LightToDark
+                                          : orderName == u"dark" ? sa::LayerOrder::DarkToLight
+                                          : orderName == u"auto" ? sa::LayerOrder::Auto
+                                                                 : sa::LayerOrder::Palette;
         if (autoColors) {
             bool ok = true;
             const int count = colors == u"auto" ? 3 : colors.mid(5).toInt(&ok);
             if (!ok || !colors.startsWith(QStringLiteral("auto")) || (colors != u"auto" && colors[4] != u':')
-                || count < 1 || count > sa::ColorGreedyOptimizer::kMaxColors)
-                fail(QStringLiteral("--colors auto:N needs 1 <= N <= %1").arg(sa::ColorGreedyOptimizer::kMaxColors));
-            palette = sa::PaletteSuggester::suggest(rgb, frame, config, size, count, background);
+                || count < 1 || count > sa::LayeredColorOptimizer::kMaxColors)
+                fail(QStringLiteral("--colors auto:N needs 1 <= N <= %1").arg(sa::LayeredColorOptimizer::kMaxColors));
+            palette = sa::PaletteSuggester::suggest(rgb, frame, config, size, count, background, layerOrder);
             QStringList names;
             for (const QColor &c : palette)
                 names << c.name();
@@ -202,23 +208,10 @@ int main(int argc, char *argv[])
         }
         std::unique_ptr<sa::IOptimizer> optimizer;
         if (colorMode) {
-            const QString method = parser.value(QStringLiteral("color-method"));
-            const QString order = parser.value(QStringLiteral("layer-order"));
-            if (method != u"layered" && method != u"interleaved")
-                fail(QStringLiteral("--color-method must be layered or interleaved"));
-            if (order != u"auto" && order != u"light" && order != u"dark" && order != u"palette")
-                fail(QStringLiteral("--layer-order must be auto, light, dark or palette"));
-            if (method == u"layered") {
-                sa::LayeredColorSettings layered;
-                layered.order = order == u"light"   ? sa::LayerOrder::LightToDark
-                                : order == u"dark"  ? sa::LayerOrder::DarkToLight
-                                : order == u"auto"  ? sa::LayerOrder::Auto
-                                                    : sa::LayerOrder::Palette;
-                layered.refinePasses = intOption(parser, QStringLiteral("layer-passes"));
-                optimizer = std::make_unique<sa::LayeredColorOptimizer>(rgb.channels, palette, background, layered);
-            } else {
-                optimizer = std::make_unique<sa::ColorGreedyOptimizer>(rgb.channels, palette, background);
-            }
+            sa::LayeredColorSettings layered;
+            layered.order = layerOrder;
+            layered.refinePasses = intOption(parser, QStringLiteral("layer-passes"));
+            optimizer = std::make_unique<sa::LayeredColorOptimizer>(rgb.channels, palette, background, layered);
         } else {
             optimizer = std::make_unique<sa::GreedyOptimizer>();
         }
@@ -349,12 +342,7 @@ int main(int argc, char *argv[])
             project.colorMode = colorMode;
             project.palette = palette;
             project.colorBackground = background;
-            project.layeredColors = parser.value(QStringLiteral("color-method")) == u"layered";
-            const QString layerOrder = parser.value(QStringLiteral("layer-order"));
-            project.layerOrder = layerOrder == u"light"     ? 1
-                                 : layerOrder == u"dark"    ? 2
-                                 : layerOrder == u"palette" ? 3
-                                                            : 0;
+            project.layerOrder = static_cast<int>(layerOrder);
             project.colorSteps = result.colorSteps;
             project.stopReason = QString::fromUtf8(sa::toString(result.stopReason));
             project.initialError = result.initialError;

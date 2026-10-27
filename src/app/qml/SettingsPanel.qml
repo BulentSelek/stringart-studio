@@ -522,17 +522,8 @@ Pane {
                         }
                     }
                     ComboField {
-                        objectName: "colorMethodField"
-                        label: qsTr("Winding")
-                        help: qsTr("Layered: each colour is wound completely before the next, so the spool changes only a few times; each layer is optimized over the others. Interleaved: colours alternate step by step for the best fit, with very many spool changes.")
-                        model: [qsTr("Layered"), qsTr("Interleaved")]
-                        currentIndex: root.controller.layeredColors ? 0 : 1
-                        onActivated: index => root.controller.layeredColors = index === 0
-                    }
-                    ComboField {
-                        visible: root.controller.layeredColors
                         label: qsTr("Layer order")
-                        help: qsTr("Which colour is wound first (bottom). Later layers lie on top and show more. Auto builds light-to-dark and dark-to-light and keeps the better one (twice the time). Palette order uses the list above from top to bottom.")
+                        help: qsTr("Each colour is wound completely before the next, so the spool changes only a few times; each layer is optimized over the others. This sets which colour is wound first (bottom). Later layers lie on top and show more. Auto builds light-to-dark and dark-to-light and keeps the better one (twice the time). Palette order uses the list above from top to bottom.")
                         model: [qsTr("Auto"), qsTr("Light to dark"), qsTr("Dark to light"), qsTr("Palette order")]
                         currentIndex: root.controller.layerOrder
                         onActivated: index => root.controller.layerOrder = index

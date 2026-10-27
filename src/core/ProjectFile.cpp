@@ -165,8 +165,6 @@ QByteArray ProjectFile::toJson(const ProjectData &project, bool embedImage, bool
                     QJsonObject{{QStringLiteral("enabled"), project.colorMode},
                                 {QStringLiteral("palette"), palette},
                                 {QStringLiteral("background"), project.colorBackground.name()},
-                                {QStringLiteral("method"), project.layeredColors ? QStringLiteral("layered")
-                                                                                 : QStringLiteral("interleaved")},
                                 {QStringLiteral("layerOrder"), kLayerOrders[std::clamp(project.layerOrder, 0, 3)]}});
     }
 
@@ -286,11 +284,6 @@ ProjectData ProjectFile::fromJson(const QByteArray &json)
         }
         if (project.palette.size() > 8 || (project.colorMode && project.palette.empty()))
             fail(QStringLiteral("the palette must contain 1 to 8 colours"));
-        // Files from before layered colours have no method: their results are interleaved.
-        const QString method = colorMode.value(QStringLiteral("method")).toString(QStringLiteral("interleaved"));
-        if (method != u"layered" && method != u"interleaved")
-            fail(QStringLiteral("unknown colour method \"%1\"").arg(method));
-        project.layeredColors = method == u"layered";
         const QString order = colorMode.value(QStringLiteral("layerOrder")).toString(QStringLiteral("auto"));
         const auto known = std::find(std::begin(kLayerOrders), std::end(kLayerOrders), order);
         if (known == std::end(kLayerOrders))
