@@ -1,6 +1,8 @@
 # Computational engine. Depends only on Qt Core/Gui (QImage) and Qt Concurrent,
 # never on Qt Quick, so it can be reused by the CLI, tests and benchmarks.
 qt_add_library(stringart_core STATIC
+    core/ColorRenderer.cpp
+    core/ColorRenderer.h
     core/Compositing.cpp
     core/Compositing.h
     core/ExportManager.cpp
@@ -26,6 +28,8 @@ qt_add_library(stringart_core STATIC
     core/StringArtResult.h
     core/ThreadRenderer.cpp
     core/ThreadRenderer.h
+    algorithms/ColorGreedyOptimizer.cpp
+    algorithms/ColorGreedyOptimizer.h
     algorithms/GreedyOptimizer.cpp
     algorithms/GreedyOptimizer.h
     algorithms/IOptimizer.h

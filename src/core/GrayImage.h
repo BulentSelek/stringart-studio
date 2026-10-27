@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <vector>
 
@@ -27,6 +28,26 @@ struct GrayImage
     [[nodiscard]] bool isNull() const noexcept { return width <= 0 || height <= 0; }
     [[nodiscard]] float at(int x, int y) const { return pixels[static_cast<std::size_t>(y) * width + x]; }
     [[nodiscard]] float &at(int x, int y) { return pixels[static_cast<std::size_t>(y) * width + x]; }
+};
+
+// Three display-encoded (sRGB) planes in [0, 1] plus optional coverage alpha
+// with the same meaning as GrayImage::alpha.
+struct RgbImage
+{
+    int width = 0;
+    int height = 0;
+    std::array<std::vector<float>, 3> channels; // r, g, b
+    std::vector<float> alpha;
+
+    RgbImage() = default;
+    RgbImage(int w, int h)
+        : width(w), height(h)
+    {
+        for (auto &channel : channels)
+            channel.assign(static_cast<std::size_t>(w) * static_cast<std::size_t>(h), 0.0f);
+    }
+
+    [[nodiscard]] bool isNull() const noexcept { return width <= 0 || height <= 0; }
 };
 
 } // namespace sa

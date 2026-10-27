@@ -88,8 +88,8 @@ QRectF ImageProcessor::containingCrop(const QSize &imageSize, int outWidth, int 
     return {(1.0 - nw) / 2.0, (1.0 - nh) / 2.0, nw, nh};
 }
 
-GrayImage ImageProcessor::prepareBase(const QImage &original, int outWidth, int outHeight,
-                                      const QRectF &normalizedCrop, double rotationDegrees)
+QImage ImageProcessor::cropCanvas(const QImage &original, int outWidth, int outHeight, const QRectF &normalizedCrop,
+                                  double rotationDegrees)
 {
     if (original.isNull() || outWidth <= 0 || outHeight <= 0)
         return {};
@@ -118,6 +118,16 @@ GrayImage ImageProcessor::prepareBase(const QImage &original, int outWidth, int 
         painter.setRenderHint(QPainter::SmoothPixmapTransform);
         painter.drawImage(target, part);
     }
+
+    return canvas;
+}
+
+GrayImage ImageProcessor::prepareBase(const QImage &original, int outWidth, int outHeight,
+                                      const QRectF &normalizedCrop, double rotationDegrees)
+{
+    const QImage canvas = cropCanvas(original, outWidth, outHeight, normalizedCrop, rotationDegrees);
+    if (canvas.isNull())
+        return {};
 
     const auto &lut = srgbToLinearTable();
     GrayImage out(outWidth, outHeight);
@@ -149,6 +159,73 @@ GrayImage ImageProcessor::prepareBase(const QImage &original, int outWidth, int 
     if (translucent)
         out.alpha = std::move(alpha);
     return out;
+}
+
+RgbImage ImageProcessor::prepareBaseRgb(const QImage &original, int outWidth, int outHeight,
+                                        const QRectF &normalizedCrop, double rotationDegrees)
+{
+    const QImage canvas = cropCanvas(original, outWidth, outHeight, normalizedCrop, rotationDegrees);
+    if (canvas.isNull())
+        return {};
+    RgbImage out(outWidth, outHeight);
+    bool translucent = false;
+    std::vector<float> alpha(static_cast<std::size_t>(outWidth) * static_cast<std::size_t>(outHeight), 1.0f);
+    for (int y = 0; y < outHeight; ++y) {
+        const auto *line = reinterpret_cast<const QRgb *>(canvas.constScanLine(y));
+        for (int x = 0; x < outWidth; ++x) {
+            const QRgb p = line[x];
+            const int a = qAlpha(p);
+            const std::size_t i = static_cast<std::size_t>(y) * outWidth + x;
+            if (a == 0) {
+                for (auto &channel : out.channels)
+                    channel[i] = 1.0f;
+                alpha[i] = 0.0f;
+                translucent = true;
+                continue;
+            }
+            auto unpremultiply = [a](int c) { return std::min(255, (c * 255 + a / 2) / a) / 255.0f; };
+            out.channels[0][i] = unpremultiply(qRed(p));
+            out.channels[1][i] = unpremultiply(qGreen(p));
+            out.channels[2][i] = unpremultiply(qBlue(p));
+            if (a < 255) {
+                alpha[i] = a / 255.0f;
+                translucent = true;
+            }
+        }
+    }
+    if (translucent)
+        out.alpha = std::move(alpha);
+    return out;
+}
+
+RgbImage ImageProcessor::applyTone(const RgbImage &base, const ToneSettings &tone)
+{
+    RgbImage out;
+    out.width = base.width;
+    out.height = base.height;
+    for (std::size_t c = 0; c < 3; ++c) {
+        GrayImage plane(base.width, base.height);
+        plane.pixels = base.channels[c];
+        plane.alpha = base.alpha;
+        out.channels[c] = applyTone(plane, tone).pixels;
+    }
+    return out;
+}
+
+QImage ImageProcessor::toQImage(const RgbImage &encoded)
+{
+    if (encoded.isNull())
+        return {};
+    QImage image(encoded.width, encoded.height, QImage::Format_RGB32);
+    auto byte = [](float v) { return static_cast<int>(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); };
+    for (int y = 0; y < encoded.height; ++y) {
+        auto *line = reinterpret_cast<QRgb *>(image.scanLine(y));
+        for (int x = 0; x < encoded.width; ++x) {
+            const std::size_t i = static_cast<std::size_t>(y) * encoded.width + x;
+            line[x] = qRgb(byte(encoded.channels[0][i]), byte(encoded.channels[1][i]), byte(encoded.channels[2][i]));
+        }
+    }
+    return image;
 }
 
 GrayImage ImageProcessor::applyTone(const GrayImage &base, const ToneSettings &tone)

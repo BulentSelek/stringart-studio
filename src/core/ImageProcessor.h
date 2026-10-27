@@ -63,12 +63,24 @@ public:
 
     [[nodiscard]] static GrayImage applyTone(const GrayImage &base, const ToneSettings &tone);
 
+    // Colour variants for multi-colour string art: display-encoded RGB planes,
+    // same crop, rotation, padding and tone rules (tone applied per channel).
+    [[nodiscard]] static RgbImage prepareBaseRgb(const QImage &original, int outWidth, int outHeight,
+                                                 const QRectF &normalizedCrop = {}, double rotationDegrees = 0.0);
+    [[nodiscard]] static RgbImage applyTone(const RgbImage &base, const ToneSettings &tone);
+    [[nodiscard]] static QImage toQImage(const RgbImage &encoded);
+
     // Converts display-encoded gray to linear-light values (the transmittance
     // target used by the optimizer).
     [[nodiscard]] static std::vector<float> toLinear(const GrayImage &encoded);
 
     // 8-bit preview of a display-encoded gray image.
     [[nodiscard]] static QImage toQImage(const GrayImage &encoded);
+
+    // Rotated, cropped and resampled canvas (premultiplied ARGB); transparent
+    // where the crop extends beyond the image. Shared by the gray and RGB paths.
+    [[nodiscard]] static QImage cropCanvas(const QImage &original, int outWidth, int outHeight,
+                                           const QRectF &normalizedCrop, double rotationDegrees);
 
     // 256-bin histogram of a display-encoded gray image.
     [[nodiscard]] static std::vector<int> histogram(const GrayImage &encoded);
