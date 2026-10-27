@@ -112,8 +112,14 @@ StringArtResult ColorGreedyOptimizer::optimize(const OptimizationProblem &proble
     result.lineCacheBytes = cache.memoryBytes();
     std::vector<float> &rgb = result.rgb;
     rgb.resize(pixels * 3);
-    for (std::size_t p = 0; p < pixels; ++p)
-        std::copy(background.begin(), background.end(), rgb.begin() + static_cast<std::ptrdiff_t>(3 * p));
+    if (!m_initialCanvas.empty()) {
+        if (m_initialCanvas.size() != pixels * 3)
+            throw std::invalid_argument("initial canvas does not match the image size");
+        std::copy(m_initialCanvas.begin(), m_initialCanvas.end(), rgb.begin());
+    } else {
+        for (std::size_t p = 0; p < pixels; ++p)
+            std::copy(background.begin(), background.end(), rgb.begin() + static_cast<std::ptrdiff_t>(3 * p));
+    }
     std::vector<float> encoded(rgb.size());
     std::transform(rgb.begin(), rgb.end(), encoded.begin(), [](float v) { return SrgbEncoder::encode(v); });
 

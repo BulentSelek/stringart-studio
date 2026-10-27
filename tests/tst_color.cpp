@@ -1,6 +1,8 @@
 #include "algorithms/ColorGreedyOptimizer.h"
 #include "algorithms/GreedyOptimizer.h"
+#include "algorithms/LayeredColorOptimizer.h"
 #include "core/ColorRenderer.h"
+#include "core/Compositing.h"
 #include "core/ExportManager.h"
 #include "core/PlaybackRenderer.h"
 #include "core/ProjectFile.h"
@@ -11,6 +13,8 @@
 #include <QPainter>
 #include <QTest>
 
+#include <limits>
+#include <numeric>
 #include <set>
 #include <stdexcept>
 
@@ -75,6 +79,12 @@ private slots:
     void playbackMatchesRenderer();
     void colourExports();
     void colourProjectRoundTrip();
+    void layeredWoundInBlocks();
+    void layeredRefinementNeverWorse();
+    void layerOrders();
+    void colourSeparation();
+    void layeredCancel();
+    void layeredProjectSettings();
 };
 
 void TestColor::singleBlackMatchesGrayscale()
@@ -299,6 +309,190 @@ void TestColor::colourProjectRoundTrip()
     mono.sequence = {0, 10, 20};
     QVERIFY(!ProjectFile::toJson(mono, false, false).contains("\"color\""));
     QVERIFY(!ProjectFile::fromJson(ProjectFile::toJson(mono, false, false)).colorMode);
+}
+
+namespace {
+
+// Red left half, blue right half, black disk in the middle.
+QImage halvesWithDisk(int size)
+{
+    QImage image = twoColorImage(size);
+    QPainter p(&image);
+    p.setPen(Qt::NoPen);
+    p.setBrush(Qt::black);
+    p.drawEllipse(QPointF(size / 2.0, size / 2.0), size / 7.0, size / 7.0);
+    return image;
+}
+
+int colourChanges(const std::vector<ColorStep> &steps)
+{
+    int changes = 0;
+    for (std::size_t i = 1; i < steps.size(); ++i)
+        changes += steps[i].color != steps[i - 1].color ? 1 : 0;
+    return changes;
+}
+
+} // namespace
+
+void TestColor::layeredWoundInBlocks()
+{
+    const ColorSetup setup = makeSetup(halvesWithDisk(256), 128, 120);
+    OptimizationConfig config;
+    config.maxSegments = 1800;
+    config.minPinSeparation = 10;
+    const std::vector<QColor> palette{QColor(200, 30, 30), QColor(30, 40, 200), Qt::black};
+    LayeredColorOptimizer optimizer(setup.target, palette, Qt::white);
+    const StringArtResult result = optimizer.optimize(setup.problem, config);
+    verifyThreads(result, setup.problem.pins, config, 3);
+    QVERIFY(static_cast<int>(result.colorSteps.size()) <= config.maxSegments);
+    // One block per colour: the spool changes at most twice.
+    QVERIFY(colourChanges(result.colorSteps) <= 2);
+    QCOMPARE(optimizer.usedOrder().size(), std::size_t{3});
+    for (std::size_t i = 1; i < result.colorSteps.size(); ++i) {
+        if (result.colorSteps[i].color != result.colorSteps[i - 1].color) {
+            const auto first = std::find(optimizer.usedOrder().begin(), optimizer.usedOrder().end(),
+                                         result.colorSteps[i - 1].color);
+            QCOMPARE(*(first + 1), result.colorSteps[i].color); // blocks follow the layer order
+        }
+    }
+    // The returned picture is what the renderer makes of the steps.
+    const std::vector<float> rendered = ColorRenderer::renderRgb(setup.problem.pins, result.colorSteps, palette,
+                                                                 Qt::white, config.threadWidth, config.threadOpacity);
+    QCOMPARE(rendered.size(), result.rgb.size());
+    float maxDifference = 0.0f;
+    for (std::size_t i = 0; i < rendered.size(); ++i)
+        maxDifference = std::max(maxDifference, std::abs(rendered[i] - result.rgb[i]));
+    QVERIFY2(maxDifference < 1e-4f, qPrintable(QString::number(maxDifference)));
+    QVERIFY(std::abs(result.finalError - ColorGreedyOptimizer::weightedSse(rendered, setup.target,
+                                                                          setup.problem.weights)
+                                             / (3.0 * std::accumulate(setup.problem.weights.begin(),
+                                                                      setup.problem.weights.end(), 0.0)))
+            < 1e-6);
+    QVERIFY(result.finalError < 0.6 * result.initialError);
+    // Colours land where they belong, and the disk is dark.
+    const QImage image = ColorRenderer::toImage(result.rgb, 128, 128);
+    QVERIFY(image.pixelColor(25, 64).red() > image.pixelColor(25, 64).blue() + 30);
+    QVERIFY(image.pixelColor(103, 64).blue() > image.pixelColor(103, 64).red() + 30);
+    QVERIFY2(image.pixelColor(64, 64).lightness() < 110, qPrintable(image.pixelColor(64, 64).name()));
+}
+
+void TestColor::layeredRefinementNeverWorse()
+{
+    const ColorSetup setup = makeSetup(halvesWithDisk(200), 96, 90);
+    OptimizationConfig config;
+    config.maxSegments = 900;
+    config.minPinSeparation = 8;
+    const std::vector<QColor> palette{Qt::white, QColor(200, 30, 30), QColor(30, 40, 200), Qt::black};
+    double previous = std::numeric_limits<double>::infinity();
+    for (int passes : {0, 1, 2}) {
+        LayeredColorSettings settings;
+        settings.order = LayerOrder::LightToDark;
+        settings.refinePasses = passes;
+        const StringArtResult result =
+            LayeredColorOptimizer(setup.target, palette, Qt::white, settings).optimize(setup.problem, config);
+        verifyThreads(result, setup.problem.pins, config, 4);
+        qInfo("passes %d: error %.5f, %zu steps", passes, result.finalError, result.colorSteps.size());
+        QVERIFY(result.finalError <= previous);
+        previous = result.finalError;
+    }
+    // Deterministic, also with a different thread count.
+    LayeredColorSettings settings;
+    settings.refinePasses = 1;
+    config.threadCount = 1;
+    const StringArtResult a =
+        LayeredColorOptimizer(setup.target, palette, Qt::white, settings).optimize(setup.problem, config);
+    config.threadCount = 4;
+    const StringArtResult b =
+        LayeredColorOptimizer(setup.target, palette, Qt::white, settings).optimize(setup.problem, config);
+    QCOMPARE(a.colorSteps, b.colorSteps);
+}
+
+void TestColor::layerOrders()
+{
+    const std::vector<QColor> palette{QColor(200, 30, 30), Qt::white, Qt::black, QColor(240, 200, 0)};
+    QCOMPARE(LayeredColorOptimizer::layerOrder(palette, LayerOrder::Palette), (std::vector<int>{0, 1, 2, 3}));
+    QCOMPARE(LayeredColorOptimizer::layerOrder(palette, LayerOrder::LightToDark), (std::vector<int>{1, 3, 0, 2}));
+    QCOMPARE(LayeredColorOptimizer::layerOrder(palette, LayerOrder::DarkToLight), (std::vector<int>{2, 0, 3, 1}));
+    QCOMPARE(LayeredColorOptimizer::layerOrder(palette, LayerOrder::Auto),
+             LayeredColorOptimizer::layerOrder(palette, LayerOrder::LightToDark));
+}
+
+void TestColor::colourSeparation()
+{
+    const int size = 64;
+    const std::size_t pixels = static_cast<std::size_t>(size) * size;
+    const std::vector<float> weights(pixels, 1.0f);
+    // All red: the red map is full, black is empty.
+    std::array<std::vector<float>, 3> red{std::vector<float>(pixels, 200 / 255.0f),
+                                          std::vector<float>(pixels, 30 / 255.0f),
+                                          std::vector<float>(pixels, 30 / 255.0f)};
+    const auto maps = LayeredColorOptimizer::separate(red, weights, size, size,
+                                                      std::vector<QColor>{QColor(200, 30, 30), Qt::black}, Qt::white,
+                                                      1.0);
+    QCOMPARE(maps.size(), std::size_t{2});
+    QVERIFY(std::accumulate(maps[0].begin(), maps[0].end(), 0.0) > 0.99 * pixels);
+    QVERIFY(std::accumulate(maps[1].begin(), maps[1].end(), 0.0) < 0.01 * pixels);
+    // Grey of linear value 0.75 on white with black thread: dithering in linear
+    // light makes a quarter of the pixels black.
+    const float grey = linearToSrgb(0.75f);
+    std::array<std::vector<float>, 3> greyPlanes{std::vector<float>(pixels, grey), std::vector<float>(pixels, grey),
+                                                 std::vector<float>(pixels, grey)};
+    const auto greyMaps = LayeredColorOptimizer::separate(greyPlanes, weights, size, size,
+                                                          std::vector<QColor>{Qt::black}, Qt::white, 0.0);
+    const double share = std::accumulate(greyMaps[0].begin(), greyMaps[0].end(), 0.0) / pixels;
+    QVERIFY2(std::abs(share - 0.25) < 0.02, qPrintable(QString::number(share)));
+    // Zero-weight pixels are board.
+    std::vector<float> none(pixels, 0.0f);
+    const auto empty = LayeredColorOptimizer::separate(greyPlanes, none, size, size, std::vector<QColor>{Qt::black},
+                                                       Qt::white, 1.0);
+    QCOMPARE(std::accumulate(empty[0].begin(), empty[0].end(), 0.0), 0.0);
+    QVERIFY_THROWS_EXCEPTION(std::invalid_argument,
+                             (void)LayeredColorOptimizer::separate(greyPlanes, weights, size + 1, size,
+                                                                   std::vector<QColor>{Qt::black}, Qt::white, 1.0));
+}
+
+void TestColor::layeredCancel()
+{
+    const ColorSetup setup = makeSetup(halvesWithDisk(128), 64, 60);
+    OptimizationConfig config;
+    config.maxSegments = 400;
+    config.minPinSeparation = 5;
+    std::stop_source stop;
+    stop.request_stop();
+    const StringArtResult result =
+        LayeredColorOptimizer(setup.target, {Qt::black, Qt::red}, Qt::white).optimize(setup.problem, config,
+                                                                                     stop.get_token());
+    QCOMPARE(result.stopReason, StopReason::Cancelled);
+    QVERIFY(result.colorSteps.empty());
+    QCOMPARE(result.finalError, result.initialError);
+}
+
+void TestColor::layeredProjectSettings()
+{
+    ProjectData project;
+    project.frame.pinCount = 30;
+    project.config.minPinSeparation = 1;
+    project.colorMode = true;
+    project.palette = {Qt::black, Qt::white};
+    project.layeredColors = true;
+    project.layerOrder = 2;
+    ProjectData loaded = ProjectFile::fromJson(ProjectFile::toJson(project, false, false));
+    QVERIFY(loaded.layeredColors);
+    QCOMPARE(loaded.layerOrder, 2);
+    project.layeredColors = false;
+    project.layerOrder = 3;
+    loaded = ProjectFile::fromJson(ProjectFile::toJson(project, false, false));
+    QVERIFY(!loaded.layeredColors);
+    QCOMPARE(loaded.layerOrder, 3);
+    // Files without a method predate layered colours: interleaved.
+    QByteArray json = ProjectFile::toJson(project, false, false);
+    json.replace("\"method\": \"interleaved\",", "");
+    json.replace("\"method\":\"interleaved\",", "");
+    QVERIFY(!json.contains("method"));
+    QVERIFY(!ProjectFile::fromJson(json).layeredColors);
+    QByteArray bad = ProjectFile::toJson(project, false, false);
+    bad.replace("\"interleaved\"", "\"sideways\"");
+    QVERIFY_THROWS_EXCEPTION(std::runtime_error, (void)ProjectFile::fromJson(bad));
 }
 
 QTEST_GUILESS_MAIN(TestColor)

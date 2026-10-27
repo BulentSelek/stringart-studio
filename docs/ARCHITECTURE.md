@@ -219,6 +219,50 @@ cumulative length, SVG with one stroke colour per line, project/JSON with
 Sequence refinement and the virtual least-squares reconstruction are
 single-colour only.
 
+### Layered colours (default)
+
+The interleaved order above fits the picture well but switches spools
+thousands of times, which nobody winds by hand. Colour thread portraits
+(e.g. Ani and Andrey Abakumov's: black and white plus a few colours, about
+8000 lines) are wound colour by colour. `LayeredColorOptimizer` produces
+that: each colour is one continuous thread wound completely before the
+next, so the spool changes only between layers.
+
+- A single-colour layer maps the canvas below it to `x·T + k·(1 − T)`, a
+  per-pixel affine map. For layer `c`, with `R` the composite of the layers
+  below and the layers above folded into `F = A·in + B`, the picture is
+  `F = A·(R·T_c + k_c·(1 − T_c)) + B`.
+- A layer is built like Algorithm A (one continuous thread from the start
+  pin), but every candidate line is scored by the exact change of the full
+  RGB objective through that map, over the line's pixels only.
+- Segment budgets: the target is dithered (serpentine Floyd–Steinberg in
+  linear RGB) to the palette plus the board colour; each colour's share of
+  the dithered picture sets its budget. The first build uses half of each
+  budget, bottom to top.
+- Refinement (2 passes): every layer is rebuilt from scratch with the others
+  fixed and may use any segments the others leave free; it is kept only if
+  the error drops (block coordinate descent, error never increases). The
+  held-back half thus goes where it helps most, not by area.
+- Order: *Auto* builds light-to-dark and dark-to-light and keeps the better
+  one; light-to-dark, dark-to-light and palette order can be forced.
+  Later layers lie on top.
+
+Measured (CLI, 512 px, 240 pins, 6000 steps, palette black, white, red,
+blue, yellow on white, 2026-10-27; error = per-channel weighted MSE):
+
+| image | interleaved | layered, first build only | layered (default) | spool changes (layered) |
+|---|---|---|---|---|
+| red / blue halves, black disk | 0.03216 (5.4 s) | 0.05475 | 0.03054 (11 s) | 3 |
+| sunset gradient, dark disk | 0.00961 (5.9 s) | 0.01918 | 0.00917 (11 s) | 4 |
+| colour plasma | 0.01609 (6.4 s) | 0.02052 | 0.01728 (10 s) | 4 |
+
+Layered with refinement matches or beats the interleaved order on two of
+three images while needing 3–4 spool changes instead of thousands; the cost
+is about twice the runtime (Auto builds two orders). Tried and dropped:
+layers that match only their own dithered density map (errors 0.049–0.059,
+grey disks) and fixed budgets by area (dark details starve). The palette
+suggester still scores palettes with fast interleaved proxy runs.
+
 ### Palette suggestion
 
 `PaletteSuggester` proposes thread colours for a given image, frame, board

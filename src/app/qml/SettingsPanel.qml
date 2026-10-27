@@ -414,6 +414,8 @@ Pane {
 
                     ComboField {
                         readonly property var presets: [
+                            { name: qsTr("Black, white, red, blue, yellow"), colors: ["#000000", "#ffffff", "#c0392b", "#1f4e8c", "#f0c000"], background: "#ffffff" },
+                            { name: qsTr("Black, white, red, yellow, green"), colors: ["#000000", "#ffffff", "#c0392b", "#f0c000", "#2e8b57"], background: "#ffffff" },
                             { name: qsTr("Black, red, blue"), colors: ["#000000", "#b03a2e", "#1f4e8c"], background: "#ffffff" },
                             { name: qsTr("Black and white on grey"), colors: ["#000000", "#ffffff"], background: "#8a8a8a" },
                             { name: qsTr("CMY + black"), colors: ["#00a0e0", "#e0007a", "#f0d000", "#000000"], background: "#ffffff" },
@@ -519,7 +521,23 @@ Pane {
                             }
                         }
                     }
-                    Hint { text: qsTr("Each colour is a separate continuous thread. The winding CSV lists all steps in order; switch spools when the colour changes. Refine and the virtual reconstruction are single-colour only.") }
+                    ComboField {
+                        objectName: "colorMethodField"
+                        label: qsTr("Winding")
+                        help: qsTr("Layered: each colour is wound completely before the next, so the spool changes only a few times; each layer is optimized over the others. Interleaved: colours alternate step by step for the best fit, with very many spool changes.")
+                        model: [qsTr("Layered"), qsTr("Interleaved")]
+                        currentIndex: root.controller.layeredColors ? 0 : 1
+                        onActivated: index => root.controller.layeredColors = index === 0
+                    }
+                    ComboField {
+                        visible: root.controller.layeredColors
+                        label: qsTr("Layer order")
+                        help: qsTr("Which colour is wound first (bottom). Later layers lie on top and show more. Auto builds light-to-dark and dark-to-light and keeps the better one (twice the time). Palette order uses the list above from top to bottom.")
+                        model: [qsTr("Auto"), qsTr("Light to dark"), qsTr("Dark to light"), qsTr("Palette order")]
+                        currentIndex: root.controller.layerOrder
+                        onActivated: index => root.controller.layerOrder = index
+                    }
+                    Hint { text: qsTr("Each colour is a separate continuous thread. Colour thread portraits typically combine black and white with a few colours and use about 8000 lines (Run page). Refine and the virtual reconstruction are single-colour only.") }
                 }
 
                 ColorDialog {

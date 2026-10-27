@@ -4,6 +4,7 @@
 #include "OptimizationWorker.h"
 #include "algorithms/ColorGreedyOptimizer.h"
 #include "algorithms/GreedyOptimizer.h"
+#include "algorithms/LayeredColorOptimizer.h"
 #include "algorithms/LeastSquaresOptimizer.h"
 #include "algorithms/PaletteSuggester.h"
 #include "algorithms/SequenceOptimizer.h"
@@ -196,6 +197,8 @@ sa::ProjectData ProjectController::currentSettings() const
     p.colorMode = m_colorMode;
     p.palette = m_palette;
     p.colorBackground = m_colorBackground;
+    p.layeredColors = m_layeredColors;
+    p.layerOrder = m_layerOrder;
     return p;
 }
 
@@ -247,6 +250,8 @@ void ProjectController::applySettings(const sa::ProjectData &p)
     if (!p.palette.empty())
         m_palette = p.palette;
     m_colorBackground = p.colorBackground;
+    m_layeredColors = p.layeredColors;
+    m_layerOrder = std::clamp(p.layerOrder, 0, 3);
     emit colorModeChanged();
     emit paletteChanged();
     emit layoutChanged();
@@ -570,9 +575,18 @@ void ProjectController::start()
             if (m_processedRgb.isNull())
                 throw std::invalid_argument("colour image is not ready");
             m_resultColorTarget = m_processedRgb.channels;
-            m_worker->start(std::make_unique<sa::ColorGreedyOptimizer>(m_processedRgb.channels, settings.palette,
-                                                                       settings.colorBackground),
-                            std::move(problem), settings.config, renderStyle(), m_processedRgb.channels);
+            std::unique_ptr<sa::IOptimizer> optimizer;
+            if (settings.layeredColors) {
+                sa::LayeredColorSettings layered;
+                layered.order = static_cast<sa::LayerOrder>(std::clamp(settings.layerOrder, 0, 3));
+                optimizer = std::make_unique<sa::LayeredColorOptimizer>(m_processedRgb.channels, settings.palette,
+                                                                        settings.colorBackground, layered);
+            } else {
+                optimizer = std::make_unique<sa::ColorGreedyOptimizer>(m_processedRgb.channels, settings.palette,
+                                                                       settings.colorBackground);
+            }
+            m_worker->start(std::move(optimizer), std::move(problem), settings.config, renderStyle(),
+                            m_processedRgb.channels);
         } else {
             m_worker->start(std::make_unique<sa::GreedyOptimizer>(), std::move(problem), settings.config,
                             renderStyle());

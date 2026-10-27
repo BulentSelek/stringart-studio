@@ -71,6 +71,10 @@ private:
     Q_PROPERTY(bool colorMode MEMBER m_colorMode NOTIFY colorModeChanged)
     Q_PROPERTY(QVariantList palette READ palette NOTIFY paletteChanged)
     Q_PROPERTY(QColor colorBackground MEMBER m_colorBackground NOTIFY paletteChanged)
+    // Layered: one colour after another (few spool changes); else interleaved.
+    Q_PROPERTY(bool layeredColors MEMBER m_layeredColors NOTIFY settingsChanged)
+    // 0 auto, 1 light to dark, 2 dark to light, 3 palette order (bottom layer first).
+    Q_PROPERTY(int layerOrder MEMBER m_layerOrder NOTIFY settingsChanged)
     Q_PROPERTY(bool resultIsColor READ resultIsColor NOTIFY stateChanged)
     Q_PROPERTY(QColor currentThreadColor READ currentThreadColor NOTIFY playbackChanged)
     Q_PROPERTY(bool suggestingPalette READ suggestingPalette NOTIFY suggestionChanged)
@@ -343,8 +347,12 @@ private:
     double m_refineStartError = 0.0;
     double m_edgeEmphasis = 0.0;
     bool m_colorMode = false;
-    std::vector<QColor> m_palette{Qt::black, QColor(0xb0, 0x3a, 0x2e), QColor(0x1f, 0x4e, 0x8c)};
+    // Black and white plus a few colours, as in layered colour thread portraits.
+    std::vector<QColor> m_palette{Qt::black, Qt::white, QColor(0xc0, 0x39, 0x2b), QColor(0x1f, 0x4e, 0x8c),
+                                  QColor(0xf0, 0xc0, 0x00)};
     QColor m_colorBackground = Qt::white;
+    bool m_layeredColors = true;
+    int m_layerOrder = 0;
     QColor m_threadColor = Qt::black;
     QColor m_backgroundColor = Qt::white;
     double m_brightness = 0.0;

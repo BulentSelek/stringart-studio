@@ -42,6 +42,10 @@ public:
     [[nodiscard]] StringArtResult optimize(const OptimizationProblem &problem, const OptimizationConfig &config,
                                            std::stop_token stop = {}, const ProgressCallback &progress = {}) override;
 
+    // Starts from this interleaved linear RGB canvas instead of the board
+    // colour (e.g. the threads of lower layers). Empty = the board colour.
+    void setInitialCanvas(std::vector<float> rgb) { m_initialCanvas = std::move(rgb); }
+
     // Weighted SSE over the three encoded channels.
     [[nodiscard]] static double weightedSse(std::span<const float> rgb, const std::array<std::vector<float>, 3> &target,
                                             std::span<const float> weights) noexcept;
@@ -50,6 +54,7 @@ private:
     std::array<std::vector<float>, 3> m_target;
     std::vector<QColor> m_palette;
     QColor m_background;
+    std::vector<float> m_initialCanvas;
 };
 
 } // namespace sa
