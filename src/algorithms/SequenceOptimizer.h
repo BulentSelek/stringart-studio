@@ -31,7 +31,7 @@ struct SequenceRefinementSettings
 // improving candidate is applied (ties: lowest pin index); positions are
 // visited in order, and passes repeat until a pass makes no improvement or
 // maxPasses is reached. T is re-rendered exactly after every pass to remove
-// rounding drift. Requires threadOpacity < 1 (division).
+// rounding drift. Requires opacity * maxLineCoverage(width) < 1 (division).
 //
 // Complexity per pass: O(n * K * L), n = segments, K = candidates per
 // position (2 * neighborhood relocations, plus all pins for insertions while

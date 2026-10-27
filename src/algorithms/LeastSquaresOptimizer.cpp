@@ -36,8 +36,9 @@ LeastSquaresResult LeastSquaresOptimizer::solve(const OptimizationProblem &probl
     problem.validate();
     const PinLayout &layout = problem.pins;
     validateConfig(config, layout.pinCount());
-    if (config.threadOpacity >= 0.999f || config.threadOpacity <= 0.0f)
-        throw std::invalid_argument("least-squares refinement requires 0 < opacity < 1");
+    if (config.threadOpacity * maxLineCoverage(config.threadWidth) >= 0.999 || config.threadOpacity <= 0.0f)
+        throw std::invalid_argument(
+            "least-squares refinement requires opacity above 0 and below 1, or a thread thinner than 0.7 px");
     if (!(settings.maxWeight > 0.0) || settings.maxIterations < 0 || !(settings.minTransmittance > 0.0))
         throw std::invalid_argument("invalid least-squares settings");
 

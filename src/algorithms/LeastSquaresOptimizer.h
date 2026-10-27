@@ -49,7 +49,8 @@ struct LeastSquaresResult
 // cyclic projected coordinate descent, x_l <- clamp(x_l - g_l / h_l, 0, xmax)
 // with g_l = sum w d_l r and h_l = sum w d_l^2 (r = D - D*), which decreases
 // the objective monotonically and converges to the KKT point.
-// Complexity per sweep: O(sum of line lengths). Requires opacity < 1.
+// Complexity per sweep: O(sum of line lengths). Requires
+// opacity * maxLineCoverage(width) < 1 (finite densities).
 class LeastSquaresOptimizer
 {
 public:

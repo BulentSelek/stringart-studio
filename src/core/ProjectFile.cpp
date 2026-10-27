@@ -139,6 +139,7 @@ QByteArray ProjectFile::toJson(const ProjectData &project, bool embedImage, bool
         {QStringLiteral("minPinSeparation"), c.minPinSeparation},
         {QStringLiteral("threadOpacity"), c.threadOpacity},
         {QStringLiteral("threadWidth"), c.threadWidth},
+        {QStringLiteral("threadDiameterMm"), project.threadDiameterMm},
         {QStringLiteral("allowRepeatedLines"), c.allowRepeatedLines},
         {QStringLiteral("startPin"), c.startPin},
         {QStringLiteral("minImprovement"), c.minImprovement},
@@ -294,11 +295,16 @@ ProjectData ProjectFile::fromJson(const QByteArray &json)
     // Validate the frame and parameters against each other.
     int pinCount = 0;
     try {
-        pinCount = PinLayout::fromFrame(project.frame, project.workingSize).pinCount();
+        const PinLayout layout = PinLayout::fromFrame(project.frame, project.workingSize);
+        pinCount = layout.pinCount();
         validateConfig(c, pinCount);
+        project.threadDiameterMm =
+            number(optimization, QStringLiteral("threadDiameterMm"), c.threadWidth * layout.mmPerUnit());
     } catch (const std::invalid_argument &e) {
         fail(QStringLiteral("invalid project settings: %1").arg(QString::fromUtf8(e.what())));
     }
+    if (!(project.threadDiameterMm > 0.0))
+        fail(QStringLiteral("threadDiameterMm must be positive"));
     if (!(project.edgeEmphasis >= 0.0))
         fail(QStringLiteral("edgeEmphasis must not be negative"));
 

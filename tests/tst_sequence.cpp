@@ -238,6 +238,11 @@ void TestSequence::invalidInput()
     OptimizationConfig opaque = config;
     opaque.threadOpacity = 1.0f;
     QVERIFY_THROWS_EXCEPTION(std::invalid_argument, run({0, 20}, opaque));
+    // An opaque thread thinner than 1/sqrt(2) px never covers a whole pixel,
+    // so removing it (division by 1 - a c) stays defined.
+    opaque.threadWidth = 0.6;
+    const StringArtResult thin = SequenceOptimizer({0, 20, 5}).optimize(problem, opaque);
+    QVERIFY(thin.finalError <= thin.initialError);
     // A single pin has nothing to refine.
     const StringArtResult trivial = SequenceOptimizer({3}).optimize(problem, config);
     QCOMPARE(trivial.sequence, std::vector<int>{3});

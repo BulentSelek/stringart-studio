@@ -21,6 +21,7 @@ private slots:
     void rejectsInvalidInput();
     void parsePinCsv();
     void parsePinCsvErrors();
+    void threadDiameter();
 };
 
 namespace {
@@ -155,6 +156,11 @@ void TestProject::rejectsInvalidInput_data()
         o[QStringLiteral("threadOpacity")] = 3.0;
         r[QStringLiteral("optimization")] = o;
     }) << QStringLiteral("threadOpacity");
+    QTest::newRow("diameter") << modified([](QJsonObject &r) {
+        QJsonObject o = r[QStringLiteral("optimization")].toObject();
+        o[QStringLiteral("threadDiameterMm")] = 0.0;
+        r[QStringLiteral("optimization")] = o;
+    }) << QStringLiteral("threadDiameterMm");
     QTest::newRow("type") << modified([](QJsonObject &r) {
         QJsonObject o = r[QStringLiteral("optimization")].toObject();
         o[QStringLiteral("maxSegments")] = QStringLiteral("many");
@@ -203,6 +209,21 @@ void TestProject::parsePinCsvErrors()
     QVERIFY_THROWS_EXCEPTION(std::runtime_error, static_cast<void>(ProjectFile::parsePinCsv(QStringLiteral("0,0\n1,a\n2,2\n3,3"))));
     QVERIFY_THROWS_EXCEPTION(std::runtime_error, static_cast<void>(ProjectFile::parsePinCsv(QStringLiteral("x,y\n1\n2,2\n3,3"))));
     QVERIFY_THROWS_EXCEPTION(std::runtime_error, static_cast<void>(ProjectFile::parsePinCsv(QString())));
+}
+
+void TestProject::threadDiameter()
+{
+    ProjectData project = sampleProject();
+    project.threadDiameterMm = 0.42;
+    QCOMPARE(ProjectFile::fromJson(ProjectFile::toJson(project, false, false)).threadDiameterMm, 0.42);
+    // Without the field the diameter follows from the pixel width and the frame scale.
+    QJsonObject root = QJsonDocument::fromJson(ProjectFile::toJson(project, false, false)).object();
+    QJsonObject optimization = root[QStringLiteral("optimization")].toObject();
+    optimization.remove(QStringLiteral("threadDiameterMm"));
+    root[QStringLiteral("optimization")] = optimization;
+    const ProjectData derived = ProjectFile::fromJson(QJsonDocument(root).toJson());
+    const double mmPerUnit = PinLayout::fromFrame(project.frame, project.workingSize).mmPerUnit();
+    QVERIFY(std::abs(derived.threadDiameterMm - project.config.threadWidth * mmPerUnit) < 1e-9);
 }
 
 QTEST_GUILESS_MAIN(TestProject)

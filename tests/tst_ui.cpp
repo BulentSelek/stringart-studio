@@ -1,5 +1,6 @@
 #include "ImageStore.h"
 #include "ProjectController.h"
+#include "core/ProjectFile.h"
 
 #include "SyntheticImages.h"
 
@@ -56,6 +57,7 @@ private slots:
     void colourWorkflow();
     void workshopWorkflow();
     void paletteSuggestion();
+    void threadDiameterInMillimetres();
     void undoRedo();
     void presets();
     void runHistory();
@@ -776,6 +778,30 @@ void TestUi::paletteSuggestion()
     QVERIFY(m_controller->suggestingPalette());
 }
 
+void TestUi::threadDiameterInMillimetres()
+{
+    // The thread is set in millimetres and converted to working pixels.
+    QVERIFY(std::abs(m_controller->threadWidthPx() - 0.3 / m_controller->mmPerPixel()) < 1e-9);
+    const double before = m_controller->threadWidthPx();
+    m_controller->setProperty("frameWidthMm", 250.0); // half the frame: twice the pixels per mm
+    QVERIFY(std::abs(m_controller->threadWidthPx() - 2.0 * before) < 0.02 * before);
+    m_controller->setProperty("frameWidthMm", 500.0);
+
+    // A run uses the converted width; the project keeps the diameter.
+    QVERIFY(m_controller->loadImage(m_portrait));
+    m_controller->setProperty("threadDiameterMm", 0.5);
+    m_controller->setProperty("maxSegments", 200);
+    m_controller->start();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
+    const QString path = m_dir.filePath(QStringLiteral("diameter.sasproj"));
+    QVERIFY(m_controller->saveProject(QUrl::fromLocalFile(path)));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const sa::ProjectData project = sa::ProjectFile::fromJson(file.readAll());
+    QCOMPARE(project.threadDiameterMm, 0.5);
+    QVERIFY(std::abs(project.config.threadWidth - 0.5 / m_controller->mmPerPixel()) < 1e-9);
+}
+
 void TestUi::undoRedo()
 {
     QVERIFY(!m_controller->canUndo());
@@ -787,7 +813,7 @@ void TestUi::undoRedo()
     m_controller->setProperty("opacity", 0.35);
     m_controller->setProperty("opacity", 0.4);
     m_controller->undo(); // flushes the pending edit, then undoes it
-    QCOMPARE(m_controller->property("opacity").toFloat(), 0.2f); // stored as float
+    QCOMPARE(m_controller->property("opacity").toFloat(), 0.65f); // stored as float
     QCOMPARE(m_controller->property("pinCount").toInt(), 150);
     QVERIFY(m_controller->canRedo());
     m_controller->undo();
@@ -802,13 +828,13 @@ void TestUi::undoRedo()
     QCOMPARE(m_controller->property("opacity").toFloat(), 0.4f); // stored as float
     // A new edit drops the redo branch.
     m_controller->undo();
-    m_controller->setProperty("threadWidth", 1.5);
+    m_controller->setProperty("threadDiameterMm", 0.5);
     QTRY_VERIFY(!m_controller->canRedo() && m_controller->canUndo());
-    QCOMPARE(m_controller->property("opacity").toFloat(), 0.2f); // stored as float
+    QCOMPARE(m_controller->property("opacity").toFloat(), 0.65f); // stored as float
 
     // Keyboard and toolbar.
     QTest::keySequence(m_window, QKeySequence::Undo);
-    QCOMPARE(m_controller->property("threadWidth").toDouble(), 1.0);
+    QCOMPARE(m_controller->property("threadDiameterMm").toDouble(), 0.3);
     QQuickItem *undoButton = findItem(QStringLiteral("undoButton"));
     QVERIFY(undoButton);
     QTRY_VERIFY(undoButton->isEnabled());

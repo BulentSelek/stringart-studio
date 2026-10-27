@@ -67,8 +67,8 @@ int main(int argc, char *argv[])
         {QStringLiteral("pins"), QStringLiteral("Number of pins on the circle."), QStringLiteral("n"), QStringLiteral("240")},
         {QStringLiteral("size"), QStringLiteral("Working resolution in pixels (square)."), QStringLiteral("px"), QStringLiteral("512")},
         {QStringLiteral("segments"), QStringLiteral("Maximum thread segments."), QStringLiteral("n"), QStringLiteral("3000")},
-        {QStringLiteral("opacity"), QStringLiteral("Thread opacity in [0, 1]."), QStringLiteral("a"), QStringLiteral("0.2")},
-        {QStringLiteral("width"), QStringLiteral("Thread width in working pixels."), QStringLiteral("px"), QStringLiteral("1.0")},
+        {QStringLiteral("opacity"), QStringLiteral("Thread opacity in [0, 1]."), QStringLiteral("a"), QStringLiteral("0.65")},
+        {QStringLiteral("thread-mm"), QStringLiteral("Thread diameter on the frame in millimetres."), QStringLiteral("mm"), QStringLiteral("0.3")},
         {QStringLiteral("min-sep"), QStringLiteral("Minimum pin separation."), QStringLiteral("n"), QStringLiteral("20")},
         {QStringLiteral("start-pin"), QStringLiteral("Starting pin."), QStringLiteral("n"), QStringLiteral("0")},
         {QStringLiteral("max-length-mm"), QStringLiteral("Maximum thread length in mm (0 = unlimited)."), QStringLiteral("mm"), QStringLiteral("0")},
@@ -156,7 +156,10 @@ int main(int argc, char *argv[])
         sa::OptimizationConfig config;
         config.maxSegments = intOption(parser, QStringLiteral("segments"));
         config.threadOpacity = static_cast<float>(doubleOption(parser, QStringLiteral("opacity")));
-        config.threadWidth = doubleOption(parser, QStringLiteral("width"));
+        const double threadMm = doubleOption(parser, QStringLiteral("thread-mm"));
+        if (!(threadMm > 0.0))
+            fail(QStringLiteral("--thread-mm must be positive"));
+        config.threadWidth = threadMm / pins.mmPerUnit();
         config.minPinSeparation = intOption(parser, QStringLiteral("min-sep"));
         config.startPin = intOption(parser, QStringLiteral("start-pin"));
         config.maxThreadLengthMm = doubleOption(parser, QStringLiteral("max-length-mm"));
@@ -337,6 +340,7 @@ int main(int argc, char *argv[])
             project.rotationDegrees = rotation;
             project.tone = tone;
             project.config = config;
+            project.threadDiameterMm = threadMm;
             project.edgeEmphasis = edgeEmphasis;
             project.sequence = result.sequence;
             project.colorMode = colorMode;

@@ -13,6 +13,13 @@ struct LineSample
     float coverage;      // fraction of the pixel covered, in (0, 1]
 };
 
+// Largest coverage any pixel can get from one line of this width (pixels):
+// the band spans width / cos(angle) <= width * sqrt(2) along the minor axis.
+[[nodiscard]] inline double maxLineCoverage(double width) noexcept
+{
+    return width * 1.4142135623730951 < 1.0 ? width * 1.4142135623730951 : 1.0;
+}
+
 // Rasterizes an anti-aliased line segment of the given width (in pixels).
 //
 // The thread is a band of the given width. The segment is walked along its

@@ -110,8 +110,9 @@ StringArtResult SequenceOptimizer::optimize(const OptimizationProblem &problem, 
     const PinLayout &layout = problem.pins;
     const int pinCount = layout.pinCount();
     validateConfig(config, pinCount);
-    if (config.threadOpacity >= 0.999f)
-        throw std::invalid_argument("sequence refinement requires thread opacity below 1");
+    // Removing a segment divides by (1 - a c), so no pixel may be fully covered.
+    if (config.threadOpacity * maxLineCoverage(config.threadWidth) >= 0.999)
+        throw std::invalid_argument("sequence refinement requires opacity below 1 or a thread thinner than 0.7 px");
     if (m_settings.maxPasses < 0 || m_settings.neighborhood < 0)
         throw std::invalid_argument("refinement passes and neighbourhood must not be negative");
     if (m_initial.empty())

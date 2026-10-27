@@ -70,6 +70,22 @@ connected because the thread would lie along the frame edge. The
 optimization mask is the convex hull of the pins (scanline-filled), i.e. the
 area threads can reach.
 
+Thread size is physical: the UI, projects (`threadDiameterMm`) and the CLI
+(`--thread-mm`, default 0.3 mm) take the thread diameter on the frame; the
+optimizer gets the equivalent width in working pixels
+(`diameter / mmPerUnit`, stored as `threadWidth`), so changing the frame
+size or the working resolution keeps the real thread. Typical threads are
+thinner than a working pixel; the rasterizer's coverage then is the
+fraction of the pixel the thread covers. Opacity (default 0.65) stays a
+separate model parameter: real thread is close to opaque, lower values
+soften overlaps. Measured on the synthetic portrait (512 px, 500 mm, 240
+pins): 0.3 mm with opacity 1.0 gave error 0.0449 (1884 segments before no
+line helped), opacity 0.65 gave 0.0389 (3042); on a Mona Lisa photo
+opacity 1.0 was better (0.0185 vs 0.0226), so the right value depends on
+the image. Sequence refinement and the virtual reconstruction need
+`opacity × maxLineCoverage(width) < 1`, which an opaque thread thinner than
+0.7 px satisfies.
+
 ## Preprocessing pipeline
 
 `original QImage` (never modified)

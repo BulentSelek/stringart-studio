@@ -61,7 +61,10 @@ private:
     Q_PROPERTY(int minSeparation MEMBER m_minSeparation NOTIFY settingsChanged)
     Q_PROPERTY(int startPin MEMBER m_startPin NOTIFY settingsChanged)
     Q_PROPERTY(double opacity MEMBER m_opacity NOTIFY settingsChanged)
-    Q_PROPERTY(double threadWidth MEMBER m_threadWidth NOTIFY settingsChanged)
+    // Thread diameter on the real frame; the optimizer works with the
+    // equivalent width in working pixels (threadWidthPx).
+    Q_PROPERTY(double threadDiameterMm MEMBER m_threadDiameterMm NOTIFY settingsChanged)
+    Q_PROPERTY(double threadWidthPx READ threadWidthPx NOTIFY threadWidthPxChanged)
     Q_PROPERTY(double maxLengthM MEMBER m_maxLengthM NOTIFY settingsChanged)
     Q_PROPERTY(bool allowRepeats MEMBER m_allowRepeats NOTIFY settingsChanged)
     Q_PROPERTY(int refinePasses MEMBER m_refinePasses NOTIFY settingsChanged)
@@ -212,6 +215,7 @@ public:
     [[nodiscard]] int canvasWidth() const;
     [[nodiscard]] int canvasHeight() const;
     [[nodiscard]] double mmPerPixel() const;
+    [[nodiscard]] double threadWidthPx() const;
     [[nodiscard]] QVariantList pinPositions() const;
     [[nodiscard]] QRectF effectiveCrop() const;
     [[nodiscard]] bool hasImage() const { return !m_source.isNull(); }
@@ -287,6 +291,7 @@ signals:
     void windingChanged();
     void suggestionChanged();
     void historyChanged();
+    void threadWidthPxChanged();
     void presetsChanged();
     void runHistoryChanged();
 
@@ -335,8 +340,9 @@ private:
     int m_maxSegments = 4000;
     int m_minSeparation = 20;
     int m_startPin = 0;
-    double m_opacity = 0.2;
-    double m_threadWidth = 1.0;
+    double m_opacity = 0.65;
+    double m_threadDiameterMm = 0.3; // typical string art thread
+
     double m_maxLengthM = 0.0;
     bool m_allowRepeats = false;
     int m_refinePasses = 3;

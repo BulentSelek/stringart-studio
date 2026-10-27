@@ -132,6 +132,10 @@ void TestLeastSquares::cancellationAndInvalidInput()
     OptimizationConfig opaque = config;
     opaque.threadOpacity = 1.0f;
     QVERIFY_THROWS_EXCEPTION(std::invalid_argument, solve({0, 10}, opaque, {}));
+    opaque.threadWidth = 0.6; // never covers a whole pixel: finite densities
+    QVERIFY(std::isfinite(LeastSquaresOptimizer::solve(problem, opaque, {0, 10, 20}).virtualError));
+    QCOMPARE(maxLineCoverage(0.5), 0.5 * std::sqrt(2.0));
+    QCOMPARE(maxLineCoverage(2.0), 1.0);
     LeastSquaresSettings bad;
     bad.maxWeight = 0.0;
     QVERIFY_THROWS_EXCEPTION(std::invalid_argument, solve({0, 10}, config, bad));

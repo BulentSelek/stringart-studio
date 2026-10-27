@@ -353,7 +353,7 @@ Pane {
                     Layout.fillWidth: true
                     enabled: !root.controller.running
                     label: qsTr("Opacity")
-                    help: qsTr("How much one thread darkens the pixels it crosses. Lower values need more threads and give smoother tones.")
+                    help: qsTr("How much a thread darkens the area it covers. Real threads are nearly opaque (1.0); lower values model thin or translucent threads, need more lines and give smoother tones.")
                     from: 0.02; to: 1.0; stepSize: 0.01
                     value: root.controller.opacity
                     onMoved: v => root.controller.opacity = v
@@ -361,18 +361,18 @@ Pane {
                 ParamSlider {
                     Layout.fillWidth: true
                     enabled: !root.controller.running
-                    label: qsTr("Width")
-                    help: qsTr("Thread width in working-image pixels.")
-                    from: 0.3; to: 4.0; stepSize: 0.1
-                    decimals: 1
-                    suffix: " px"
-                    value: root.controller.threadWidth
-                    onMoved: v => root.controller.threadWidth = v
+                    label: qsTr("Diameter")
+                    help: qsTr("Thread diameter on the real frame. String art thread is usually 0.2–0.5 mm; the optimizer converts it to working-image pixels.")
+                    from: 0.05; to: 2.0; stepSize: 0.01
+                    decimals: 2
+                    suffix: " mm"
+                    value: root.controller.threadDiameterMm
+                    onMoved: v => root.controller.threadDiameterMm = v
                 }
                 Hint {
-                    text: qsTr("≈ opaque thread of %1 mm diameter on this frame")
-                          .arg((root.controller.opacity * root.controller.threadWidth
-                                * root.controller.mmPerPixel).toFixed(2))
+                    text: qsTr("= %1 px at the working size (%2 mm per pixel)")
+                          .arg(root.controller.threadWidthPx.toFixed(2))
+                          .arg(root.controller.mmPerPixel.toFixed(2))
                 }
 
                 SectionLabel { text: qsTr("Colours") }

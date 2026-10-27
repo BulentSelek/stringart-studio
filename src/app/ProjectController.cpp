@@ -9,6 +9,7 @@
 #include "algorithms/SequenceOptimizer.h"
 #include "core/ExportManager.h"
 #include "core/ImageProcessor.h"
+#include "core/LineRasterizer.h"
 #include "core/OptimizationProblem.h"
 #include "core/WorkshopDocuments.h"
 
@@ -71,6 +72,8 @@ ProjectController::ProjectController(std::shared_ptr<ImageStore> store, QObject 
     for (auto signal : {&ProjectController::geometryChanged, &ProjectController::layoutChanged,
                         &ProjectController::imagesChanged})
         connect(this, signal, this, &ProjectController::effectiveCropChanged);
+    for (auto signal : {&ProjectController::layoutChanged, &ProjectController::settingsChanged})
+        connect(this, signal, this, &ProjectController::threadWidthPxChanged);
     m_historyTimer.setSingleShot(true);
     m_historyTimer.setInterval(kHistoryDelayMs);
     connect(&m_historyTimer, &QTimer::timeout, this, &ProjectController::recordHistory);
@@ -142,6 +145,12 @@ int ProjectController::canvasHeight() const
     }
 }
 
+double ProjectController::threadWidthPx() const
+{
+    const double mm = mmPerPixel();
+    return mm > 0.0 ? std::clamp(m_threadDiameterMm / mm, 0.01, 64.0) : 1.0;
+}
+
 double ProjectController::mmPerPixel() const
 {
     const std::optional<sa::PinLayout> layout = currentLayout();
@@ -187,7 +196,8 @@ sa::ProjectData ProjectController::currentSettings() const
     p.config.minPinSeparation = m_minSeparation;
     p.config.startPin = m_startPin;
     p.config.threadOpacity = static_cast<float>(m_opacity);
-    p.config.threadWidth = m_threadWidth;
+    p.config.threadWidth = threadWidthPx();
+    p.threadDiameterMm = m_threadDiameterMm;
     p.config.maxThreadLengthMm = m_maxLengthM * 1000.0;
     p.config.allowRepeatedLines = m_allowRepeats;
     p.edgeEmphasis = m_edgeEmphasis;
@@ -238,7 +248,7 @@ void ProjectController::applySettings(const sa::ProjectData &p)
     m_minSeparation = p.config.minPinSeparation;
     m_startPin = p.config.startPin;
     m_opacity = p.config.threadOpacity;
-    m_threadWidth = p.config.threadWidth;
+    m_threadDiameterMm = p.threadDiameterMm;
     m_maxLengthM = p.config.maxThreadLengthMm / 1000.0;
     m_allowRepeats = p.config.allowRepeatedLines;
     m_edgeEmphasis = p.edgeEmphasis;
@@ -261,7 +271,7 @@ void ProjectController::applySettings(const sa::ProjectData &p)
 sa::RenderStyle ProjectController::renderStyle() const
 {
     sa::RenderStyle style;
-    style.threadWidth = m_threadWidth;
+    style.threadWidth = threadWidthPx();
     style.opacity = static_cast<float>(m_opacity);
     style.background = m_backgroundColor;
     style.thread = m_threadColor;
@@ -599,8 +609,8 @@ void ProjectController::refineSequence()
         setStatus(tr("Sequence refinement is available for single-colour results only."));
         return;
     }
-    if (m_runSettings.config.threadOpacity >= 0.999f) {
-        setStatus(tr("Sequence refinement needs a thread opacity below 1."));
+    if (m_runSettings.config.threadOpacity * sa::maxLineCoverage(m_runSettings.config.threadWidth) >= 0.999) {
+        setStatus(tr("Sequence refinement needs an opacity below 1 or a thinner thread."));
         return;
     }
     sa::OptimizationProblem problem;
@@ -632,8 +642,8 @@ void ProjectController::computeVirtual()
         return;
     }
     const float opacity = m_runSettings.config.threadOpacity;
-    if (opacity <= 0.0f || opacity >= 0.999f) {
-        setStatus(tr("The virtual reconstruction needs a thread opacity between 0 and 1."));
+    if (opacity <= 0.0f || opacity * sa::maxLineCoverage(m_runSettings.config.threadWidth) >= 0.999) {
+        setStatus(tr("The virtual reconstruction needs an opacity above 0 and below 1, or a thinner thread."));
         return;
     }
     sa::OptimizationProblem problem;
@@ -1408,12 +1418,12 @@ QVariantList ProjectController::runHistory() const
     QVariantList rows;
     for (auto it = m_runs.rbegin(); it != m_runs.rend(); ++it) {
         const sa::ProjectData &p = it->settings;
-        QString summary = tr("%1 pins, opacity %2, width %3 px")
+        QString summary = tr("%1 pins, opacity %2, thread %3 mm")
                               .arg(p.frame.kind == sa::PinLayoutKind::Custom
                                        ? static_cast<int>(p.frame.customPinsMm.size())
                                        : p.frame.pinCount)
                               .arg(p.config.threadOpacity, 0, 'f', 2)
-                              .arg(p.config.threadWidth, 0, 'f', 1);
+                              .arg(p.threadDiameterMm, 0, 'f', 2);
         if (p.edgeEmphasis > 0.0)
             summary += tr(", edges %1").arg(p.edgeEmphasis, 0, 'f', 1);
         if (p.config.minPinSeparation > 0)

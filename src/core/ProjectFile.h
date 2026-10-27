@@ -28,7 +28,8 @@ struct ProjectData
     double rotationDegrees = 0.0;
     ToneSettings tone;
 
-    OptimizationConfig config;
+    OptimizationConfig config;  // config.threadWidth is in working pixels
+    double threadDiameterMm = 0.3; // the same thread in millimetres on the frame (what the UI edits)
     double edgeEmphasis = 0.0;
     QColor threadColor = Qt::black;
     QColor backgroundColor = Qt::white;
