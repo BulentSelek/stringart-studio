@@ -65,30 +65,14 @@ Pane {
                     onClicked: root.controller.start()
                 }
 
-                RowLayout {
+                Button {
+                    text: qsTr("Refine sequence")
+                    enabled: root.controller.hasResult && !root.controller.running && !root.controller.resultIsColor
                     Layout.fillWidth: true
-
-                    Button {
-                        text: qsTr("Refine")
-                        enabled: root.controller.hasResult && !root.controller.running && !root.controller.resultIsColor
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 1
-                        onClicked: root.controller.refineSequence()
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 300
-                        ToolTip.text: qsTr("Refine the sequence: local search on the finished thread that moves, removes or inserts single pins where that lowers the error. The thread stays continuous.")
-                    }
-                    Button {
-                        text: root.controller.computingVirtual ? qsTr("Computing…") : qsTr("Virtual (LS)")
-                        enabled: root.controller.hasResult && !root.controller.running && !root.controller.computingVirtual
-                                 && !root.controller.resultIsColor
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 1
-                        onClicked: root.controller.computeVirtual()
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 300
-                        ToolTip.text: qsTr("Virtual reconstruction: least-squares weights for the result's lines, an upper bound on quality for this line set. Not windable; shown in the Virtual view.")
-                    }
+                    onClicked: root.controller.refineSequence()
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 300
+                    ToolTip.text: qsTr("Local search on the finished thread: moves, removes or inserts single pins where that lowers the error. The thread stays continuous.")
                 }
 
                 RowLayout {

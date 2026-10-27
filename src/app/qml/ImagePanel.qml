@@ -7,8 +7,8 @@ import QtQuick.Layouts
 
 import StringArtStudio
 
-// Centre panel: original (with crop frame) / processed / result / virtual /
-// runs views with zoom, pan, an optional pin overlay and, on the result, an
+// Centre panel: original (with crop frame) / processed / result / runs
+// views with zoom, pan, an optional pin overlay and, on the result, an
 // error map (residual) and a before/after comparison.
 Pane {
     id: root
@@ -19,16 +19,11 @@ Pane {
     readonly property int originalTab: 0
     readonly property int processedTab: 1
     readonly property int resultTab: 2
-    readonly property int virtualTab: 3
-    readonly property int runsTab: 4
+    readonly property int runsTab: 3
     // String art view mode: the thread, its error map, or a comparison with the target.
     readonly property bool resultModeActive: tabs.currentIndex === root.resultTab && root.controller.hasResult
     readonly property bool showErrorMap: root.resultModeActive && resultMode.currentIndex === 1
     readonly property bool showCompare: root.resultModeActive && resultMode.currentIndex === 2
-
-    // Show the virtual reconstruction as soon as a new one is available.
-    readonly property int virtualRevision: root.controller.virtualRevision
-    onVirtualRevisionChanged: if (root.controller.hasVirtual) tabs.currentIndex = root.virtualTab
 
     padding: 0
     Material.background: "#1b1b1f"
@@ -76,16 +71,13 @@ Pane {
         switch (tabs.currentIndex) {
         case 0: return "image://studio/original/" + root.controller.originalRevision
         case 1: return "image://studio/processed/" + root.controller.processedRevision
-        case 2: return root.showErrorMap ? "image://studio/residual/" + root.controller.resultRevision
-                                         : "image://studio/result/" + root.controller.resultRevision
-        default: return "image://studio/virtual/" + root.controller.virtualRevision
+        default: return root.showErrorMap ? "image://studio/residual/" + root.controller.resultRevision
+                                          : "image://studio/result/" + root.controller.resultRevision
         }
     }
     readonly property bool imageAvailable: {
         if (tabs.currentIndex < root.resultTab)
             return root.controller.hasImage
-        if (tabs.currentIndex === root.virtualTab)
-            return root.controller.hasVirtual
         return root.controller.hasResult || root.controller.running
     }
 
@@ -105,13 +97,6 @@ Pane {
                 TabButton { text: qsTr("Original"); width: implicitWidth }
                 TabButton { text: qsTr("Processed"); width: implicitWidth }
                 TabButton { text: qsTr("String art"); width: implicitWidth }
-                TabButton {
-                    text: qsTr("Virtual")
-                    width: implicitWidth
-                    enabled: root.controller.hasVirtual
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Virtual least-squares reconstruction (not windable)")
-                }
                 TabButton {
                     width: implicitWidth
                     text: root.controller.runHistory.length > 0
@@ -555,26 +540,6 @@ Pane {
                 text: qsTr("Press Start to generate string art")
                 font.pixelSize: 20
                 opacity: 0.5
-            }
-
-            Pane {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: 12
-                visible: tabs.currentIndex === root.virtualTab && root.imageAvailable
-                opacity: 0.92
-                padding: 8
-                Label {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    text: qsTr("Virtual reconstruction (least squares): the result's %1 lines with ideal fractional weights. "
-                               + "This is not a windable thread; it shows how good this line set could be. "
-                               + "Error %2 here vs %3 for the actual thread.")
-                          .arg(root.controller.virtualLines)
-                          .arg(root.controller.virtualError.toFixed(5))
-                          .arg(root.controller.error.toFixed(5))
-                }
             }
 
             Pane {

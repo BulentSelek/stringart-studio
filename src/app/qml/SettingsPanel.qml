@@ -531,7 +531,7 @@ Pane {
                         currentIndex: root.controller.layerOrder
                         onActivated: index => root.controller.layerOrder = index
                     }
-                    Hint { text: qsTr("Each colour is a separate continuous thread. Colour thread portraits typically combine black and white with a few colours and use about 8000 lines (Run page). Refine and the virtual reconstruction are single-colour only.") }
+                    Hint { text: qsTr("Each colour is a separate continuous thread. Colour thread portraits typically combine black and white with a few colours and use about 8000 lines (Run page). Sequence refinement is single-colour only.") }
                 }
 
                 ColorDialog {

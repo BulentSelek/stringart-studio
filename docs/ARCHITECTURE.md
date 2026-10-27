@@ -28,7 +28,6 @@ src/
 │   ├── IOptimizer.h           common optimizer interface
 │   ├── GreedyOptimizer.*      Algorithm A
 │   ├── LayeredColorOptimizer.* multi-colour threads wound in layers
-│   ├── LeastSquaresOptimizer.* Algorithm B (virtual)
 │   ├── PaletteSuggester.*     thread colours from the image (multi-colour)
 │   └── SequenceOptimizer.*    Algorithm C
 ├── app/                   stringart_ui (QML module "StringArtStudio") + stringart-studio
@@ -85,9 +84,9 @@ soften overlaps. Measured on the synthetic portrait (512 px, 500 mm, 240
 pins): 0.3 mm with opacity 1.0 gave error 0.0449 (1884 segments before no
 line helped), opacity 0.65 gave 0.0389 (3042); on a Mona Lisa photo
 opacity 1.0 was better (0.0185 vs 0.0226), so the right value depends on
-the image. Sequence refinement and the virtual reconstruction need
-`opacity × maxLineCoverage(width) < 1`, which an opaque thread thinner than
-0.7 px satisfies.
+the image. Sequence refinement needs `opacity × maxLineCoverage(width) < 1`
+(it removes a thread by dividing by `1 − a·c`), which an opaque thread
+thinner than 0.7 px satisfies.
 
 ## Preprocessing pipeline
 
@@ -255,8 +254,8 @@ The result is a list of steps `(colour, from pin, to pin)`, layer by layer;
 (tested). Exports: CSV with `color` / `color_hex` columns and per-colour
 cumulative length, SVG with one stroke colour per line, project/JSON with
 `color.palette`, `color.layerOrder` and `result.steps` (per-colour
-continuity is validated on load). Sequence refinement and the virtual
-least-squares reconstruction are single-colour only.
+continuity is validated on load). Sequence refinement is single-colour
+only.
 
 Measured (CLI, 512 px, 240 pins, 6000 steps, palette black, white, red,
 blue, yellow on white, 2026-10-27; error = per-channel weighted MSE). The
@@ -444,33 +443,17 @@ hundreds of nearly equivalent candidate lines per step, a one-step-deeper
 view does not change the outcome noticeably, so the code was removed
 rather than offered as a slower option with no benefit.
 
-## Algorithm B — least-squares line weights (implemented, virtual)
+## Algorithm B — least-squares line weights (removed)
 
-`LeastSquaresOptimizer` fixes the candidate set to the distinct lines of the
-current result and gives each a continuous weight `x_l ∈ [0, xmax]`
-(default 4; initial value = how often the line occurs). In optical density
-threads add up exactly:
-
-```
-d_l(p) = −ln(1 − a·c_l(p))          density of one thread along line l
-D(p)   = Σ_l x_l d_l(p),  T = e^(−D)
-D*(p)  = −ln(max(t(p), 10⁻³))       t = linear-light target
-minimize Σ_p w_p (D(p) − D*(p))²    subject to 0 ≤ x_l ≤ xmax
-```
-
-This convex box-constrained QP is solved by cyclic projected coordinate
-descent (`x_l ← clamp(x_l − g_l/h_l, 0, xmax)`), which decreases the
-objective monotonically; tests verify the KKT conditions. Cost per sweep:
-`O(Σ line lengths)`; typically < 0.1 s.
-
-**This is not a manufacturable result.** Fractional weights cannot be wound
-and the continuity of the thread is ignored. The UI therefore shows it only
-in a separate *Virtual (LS)* view with a banner, next to the error of the
-actual thread (e.g. 0.052 virtual vs 0.083 thread for 1200 segments): the gap
-measures how much the integer, continuous-thread constraint costs for that
-line set. Exports always use the real sequence. Note that the fit is in
-density space, not in the sRGB objective, so it is an informative bound
-rather than an exact optimum of the reported error.
+The spec (README, Algorithm B) asks for an optional least-squares stage that
+gives the result's lines continuous weights, shown as a virtual
+reconstruction clearly separate from the windable thread. It was
+implemented (bounded least squares in optical density, projected coordinate
+descent, KKT-verified; e.g. error 0.052 virtual vs 0.083 for the real
+thread at 1200 segments) and then removed on request: fractional weights
+cannot be wound, it worked for single-colour results only, and the number
+did not help anyone build a piece. This is a deliberate deviation from the
+spec.
 
 ## Threading and UI
 

@@ -53,7 +53,6 @@ private slots:
     void parametersPersist();
     void playbackWorkflow();
     void refineWorkflow();
-    void virtualReconstruction();
     void colourWorkflow();
     void workshopWorkflow();
     void paletteSuggestion();
@@ -512,37 +511,6 @@ void TestUi::refineWorkflow()
     qInfo("greedy %.6f -> refined %.6f", greedyError, m_controller->error());
 }
 
-void TestUi::virtualReconstruction()
-{
-    QVERIFY(m_controller->loadImage(m_portrait));
-    m_controller->setProperty("pinCount", 150);
-    m_controller->setProperty("maxSegments", 1200);
-    m_controller->start();
-    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
-    QVERIFY(!m_controller->hasVirtual());
-
-    m_controller->computeVirtual();
-    QVERIFY(m_controller->computingVirtual());
-    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->computingVirtual(), 60000);
-    QVERIFY2(m_controller->hasVirtual(), qPrintable(m_controller->statusText()));
-    QVERIFY(m_controller->virtualLines() > 0);
-    QVERIFY(m_controller->virtualError() > 0.0);
-    QCOMPARE(m_store->get(QStringLiteral("virtual")).size(), QSize(512, 512));
-    // The view switches to the virtual reconstruction.
-    QTRY_COMPARE(findItem(QStringLiteral("viewTabs"))->property("currentIndex").toInt(), 3);
-    qInfo("virtual %.5f vs thread %.5f", m_controller->virtualError(), m_controller->error());
-
-    QTest::qWait(300);
-    const QByteArray shot = qgetenv("STRINGART_UI_VIRTUAL");
-    if (!shot.isEmpty())
-        QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(shot)));
-
-    // A new result invalidates the virtual reconstruction.
-    m_controller->refineSequence();
-    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
-    QVERIFY(!m_controller->hasVirtual());
-}
-
 void TestUi::colourWorkflow()
 {
     // A colourful test picture: red left half, blue right half, black disk.
@@ -906,7 +874,7 @@ void TestUi::runHistory()
     QCOMPARE(newest.value(QStringLiteral("error")).toDouble(), m_controller->error());
     QVERIFY(!m_store->get(QStringLiteral("run%1").arg(oldest.value(QStringLiteral("id")).toInt())).isNull());
 
-    findItem(QStringLiteral("viewTabs"))->setProperty("currentIndex", 4);
+    findItem(QStringLiteral("viewTabs"))->setProperty("currentIndex", 3);
     QTRY_VERIFY(findItem(QStringLiteral("runsView"))->isVisible());
     QTest::qWait(300);
     const QByteArray shot = qgetenv("STRINGART_UI_RUNS");

@@ -1,11 +1,14 @@
 #include "algorithms/GreedyOptimizer.h"
 #include "algorithms/SequenceOptimizer.h"
+#include "core/LineRasterizer.h"
 #include "core/ImageProcessor.h"
 #include "core/ThreadRenderer.h"
 
 #include "SyntheticImages.h"
 
 #include <QTest>
+
+#include <cmath>
 
 #include <set>
 #include <stdexcept>
@@ -243,6 +246,8 @@ void TestSequence::invalidInput()
     opaque.threadWidth = 0.6;
     const StringArtResult thin = SequenceOptimizer({0, 20, 5}).optimize(problem, opaque);
     QVERIFY(thin.finalError <= thin.initialError);
+    QCOMPARE(maxLineCoverage(0.5), 0.5 * std::sqrt(2.0));
+    QCOMPARE(maxLineCoverage(2.0), 1.0);
     // A single pin has nothing to refine.
     const StringArtResult trivial = SequenceOptimizer({3}).optimize(problem, config);
     QCOMPARE(trivial.sequence, std::vector<int>{3});

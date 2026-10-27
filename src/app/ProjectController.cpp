@@ -4,7 +4,6 @@
 #include "OptimizationWorker.h"
 #include "algorithms/GreedyOptimizer.h"
 #include "algorithms/LayeredColorOptimizer.h"
-#include "algorithms/LeastSquaresOptimizer.h"
 #include "algorithms/PaletteSuggester.h"
 #include "algorithms/SequenceOptimizer.h"
 #include "core/ExportManager.h"
@@ -633,75 +632,6 @@ void ProjectController::refineSequence()
     setStatus(tr("Refining the sequence..."));
 }
 
-void ProjectController::computeVirtual()
-{
-    if (m_running || m_computingVirtual || !hasResult() || !m_resultLayout || m_resultTarget.empty())
-        return;
-    if (resultIsColor()) {
-        setStatus(tr("The virtual reconstruction is available for single-colour results only."));
-        return;
-    }
-    const float opacity = m_runSettings.config.threadOpacity;
-    if (opacity <= 0.0f || opacity * sa::maxLineCoverage(m_runSettings.config.threadWidth) >= 0.999) {
-        setStatus(tr("The virtual reconstruction needs an opacity above 0 and below 1, or a thinner thread."));
-        return;
-    }
-    sa::OptimizationProblem problem;
-    problem.width = m_resultLayout->canvasWidth();
-    problem.height = m_resultLayout->canvasHeight();
-    problem.target = m_resultTarget;
-    problem.weights = m_resultWeights;
-    problem.pins = *m_resultLayout;
-    const sa::OptimizationConfig config = m_runSettings.config;
-    const std::vector<int> sequence = m_resultSequence;
-    const int generation = m_resultGeneration;
-    const QColor background = m_backgroundColor;
-    const QColor thread = m_threadColor;
-
-    m_computingVirtual = true;
-    emit virtualChanged();
-    setStatus(tr("Computing the virtual least-squares reconstruction..."));
-    struct Outcome
-    {
-        QImage image;
-        double error = 0.0;
-        int lines = 0;
-        QString failure;
-    };
-    QtConcurrent::run([problem = std::move(problem), config, sequence, background, thread] {
-        Outcome outcome;
-        try {
-            const sa::LeastSquaresResult ls = sa::LeastSquaresOptimizer::solve(problem, config, sequence);
-            outcome.image = sa::ThreadRenderer::toImage(ls.transmittance, ls.width, ls.height, background, thread);
-            outcome.error = ls.virtualError;
-            outcome.lines = static_cast<int>(ls.lines.size());
-        } catch (const std::exception &e) {
-            outcome.failure = QString::fromUtf8(e.what());
-        }
-        return outcome;
-    }).then(this, [this, generation](const Outcome &outcome) {
-        m_computingVirtual = false;
-        if (generation != m_resultGeneration) { // the result changed meanwhile
-            emit virtualChanged();
-            return;
-        }
-        if (!outcome.failure.isEmpty()) {
-            emit virtualChanged();
-            setStatus(tr("Virtual reconstruction failed: %1").arg(outcome.failure));
-            return;
-        }
-        m_store->set(QStringLiteral("virtual"), outcome.image);
-        m_virtualError = outcome.error;
-        m_virtualLines = outcome.lines;
-        ++m_virtualRevision;
-        emit virtualChanged();
-        setStatus(tr("Virtual reconstruction: error %1 with ideal weights on %2 lines, vs %3 for the actual thread.")
-                      .arg(m_virtualError, 0, 'f', 5)
-                      .arg(m_virtualLines)
-                      .arg(m_error, 0, 'f', 5));
-    });
-}
-
 void ProjectController::pause()
 {
     if (!m_running || m_paused)
@@ -786,10 +716,6 @@ void ProjectController::resetResultState()
 {
     endWinding();
     stopPlayback();
-    ++m_resultGeneration;
-    m_virtualLines = 0;
-    m_virtualError = 0.0;
-    emit virtualChanged();
     m_playback.reset();
     m_colorPlayback.reset();
     m_resultSequence.clear();
@@ -973,11 +899,6 @@ void ProjectController::exportFrame(const QUrl &url)
 
 void ProjectController::clearResult()
 {
-    ++m_resultGeneration;
-    m_virtualLines = 0;
-    m_virtualError = 0.0;
-    m_store->set(QStringLiteral("virtual"), QImage());
-    emit virtualChanged();
     resetResultState();
     m_playbackPosition = 0;
     emit playbackChanged();

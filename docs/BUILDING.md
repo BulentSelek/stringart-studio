@@ -40,37 +40,42 @@ Linux. Parameters on the left are grouped by workflow
 step, each with secondary options under *Advanced* and an explanation on
 hover (?):
 
-1. **Image** — tone (brightness, contrast, gamma, invert, histogram),
-   rotation and crop. The crop frame is edited on the *Original* view; it may
-   extend beyond the photo, and **Fit whole photo** puts the entire photo
-   inside the frame.
-2. **Frame** — shape (circle, ellipse, rectangle or custom CSV), physical
-   size, pin count, minimum separation; *Advanced*: start pin. The
-   *Processed* view shows the frame outline.
-3. **Thread** — opacity, width (with the equivalent physical thread
-   diameter) and colours. *Multi-colour threads* turns the palette (presets,
-   add / edit / remove up to 8 colours, board colour) into part of the
-   optimization; each colour becomes its own continuous thread.
-4. **Run** — working size, max. segments, edge emphasis; *Advanced*: max.
-   thread length, repeated lines, refinement passes and reach.
+1. **Frame** — shape (circle, ellipse, rectangle or custom CSV), physical
+   size, position on the photo (rotation, *Fit whole photo*, *Reset crop*),
+   pin count, minimum separation; *Advanced*: start pin. This page shows the
+   *Original* view, where the yellow frame is moved and resized on the photo
+   (it may extend beyond it).
+2. **Tone** — brightness, contrast, gamma, invert, histogram; shows the
+   *Processed* view.
+3. **Thread** — opacity, diameter in mm (with the equivalent working
+   pixels) and colours. *Multi-colour threads* turns the palette (presets,
+   *From image … Suggest*, add / edit / remove up to 8 colours, board colour,
+   layer order) into part of the optimization; each colour becomes its own
+   continuous thread, wound layer by layer.
+4. **Run** — effort (Low / Medium / High working resolution), max.
+   segments, edge emphasis; *Advanced*: max. thread length, repeated lines,
+   refinement passes and reach.
 
-After a run, **Refine sequence** (right panel) runs a local search on the
-finished thread that moves, removes or inserts single pins where that lowers
-the error; the thread stays continuous. **Virtual reconstruction (LS)**
-computes ideal fractional weights for the result's lines and shows them in
-the separate *Virtual (LS)* view: a quality bound, not a windable thread.
+Press **Start** on the right (Pause / Resume / Cancel while it runs). The
+*String art* view updates live; its mode selector shows the thread, the
+*Error map* (red: lighter than the target, blue: darker) or *Compare* (the
+target left of a draggable divider). The mouse wheel zooms around the
+cursor, drag pans, **Fit** resets, **Pins** overlays numbered pins. After a
+run, **Refine sequence** runs a local search on the finished thread that
+moves, removes or inserts single pins where that lowers the error; the
+thread stays continuous. The *Runs* view keeps the finished runs of the
+current image side by side. Toolbar: undo / redo of parameter changes
+(Ctrl+Z, Ctrl+Shift+Z) and named presets.
 
-Selecting *Image* or *Frame* switches the centre view to *Original* or
-*Processed*. Press **Start** on the right; the *String art* and *Residual*
-views update live, with Pause / Resume / Cancel. The mouse wheel zooms around
-the cursor, drag pans, **Fit** resets, **Pins** overlays pin markers, and
-**Compare** (String art view) shows the target left of a draggable divider. Export
-PNG, the winding CSV (mm or px), SVG or JSON on the right.
+Exports on the right: PNG, winding CSV (mm or px), SVG, JSON, and under
+*Workshop* a 1:1 pin template PDF and an A4 winding guide PDF.
 
 After a run, the bottom *Winding* panel replays the sequence: drag the
 timeline, step with ◀ ▶ (or the Left / Right keys), play / pause with Space,
 choose the speed, jump to a segment, and export the current frame. The
 current segment is highlighted in red with its source and destination pins.
+**Winding mode** opens a full-window step-by-step view for winding the real
+piece (keys or a foot pedal, optional auto-advance and speech).
 
 Custom pin CSV: one pin per line, `x,y` in mm (comma, semicolon, tab or
 spaces), in perimeter order; an optional header naming `x`/`y` columns is

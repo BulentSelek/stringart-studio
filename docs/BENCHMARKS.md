@@ -56,5 +56,4 @@ With several colours Auto builds two layer orders and each refinement pass
 rebuilds every layer, so the runtime is several single-colour runs. More
 results in ARCHITECTURE.md (*Multi-colour threads*).
 
-Sequence refinement (Algorithm C) and the virtual least-squares
-reconstruction (Algorithm B) are measured in ARCHITECTURE.md.
+Sequence refinement (Algorithm C) is measured in ARCHITECTURE.md.
