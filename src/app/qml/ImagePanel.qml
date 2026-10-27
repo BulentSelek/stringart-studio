@@ -7,8 +7,9 @@ import QtQuick.Layouts
 
 import StringArtStudio
 
-// Centre panel: original (with crop frame) / processed / result / residual
-// views with zoom, pan and an optional pin overlay.
+// Centre panel: original (with crop frame) / processed / result / virtual /
+// runs views with zoom, pan, an optional pin overlay and, on the result, an
+// error map (residual) and a before/after comparison.
 Pane {
     id: root
 
@@ -18,9 +19,12 @@ Pane {
     readonly property int originalTab: 0
     readonly property int processedTab: 1
     readonly property int resultTab: 2
-    readonly property int residualTab: 3
-    readonly property int virtualTab: 4
-    readonly property int runsTab: 5
+    readonly property int virtualTab: 3
+    readonly property int runsTab: 4
+    // String art view mode: the thread, its error map, or a comparison with the target.
+    readonly property bool resultModeActive: tabs.currentIndex === root.resultTab && root.controller.hasResult
+    readonly property bool showErrorMap: root.resultModeActive && resultMode.currentIndex === 1
+    readonly property bool showCompare: root.resultModeActive && resultMode.currentIndex === 2
 
     // Show the virtual reconstruction as soon as a new one is available.
     readonly property int virtualRevision: root.controller.virtualRevision
@@ -72,8 +76,8 @@ Pane {
         switch (tabs.currentIndex) {
         case 0: return "image://studio/original/" + root.controller.originalRevision
         case 1: return "image://studio/processed/" + root.controller.processedRevision
-        case 2: return "image://studio/result/" + root.controller.resultRevision
-        case 3: return "image://studio/residual/" + root.controller.resultRevision
+        case 2: return root.showErrorMap ? "image://studio/residual/" + root.controller.resultRevision
+                                         : "image://studio/result/" + root.controller.resultRevision
         default: return "image://studio/virtual/" + root.controller.virtualRevision
         }
     }
@@ -96,19 +100,20 @@ Pane {
             TabBar {
                 id: tabs
                 objectName: "viewTabs"
-                Layout.fillWidth: true
+                // Natural tab widths (TabBar otherwise shares its width equally and elides).
                 currentIndex: 0
-                TabButton { text: qsTr("Original") }
-                TabButton { text: qsTr("Processed") }
-                TabButton { text: qsTr("String art") }
-                TabButton { text: qsTr("Residual") }
+                TabButton { text: qsTr("Original"); width: implicitWidth }
+                TabButton { text: qsTr("Processed"); width: implicitWidth }
+                TabButton { text: qsTr("String art"); width: implicitWidth }
                 TabButton {
                     text: qsTr("Virtual")
+                    width: implicitWidth
                     enabled: root.controller.hasVirtual
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Virtual least-squares reconstruction (not windable)")
                 }
                 TabButton {
+                    width: implicitWidth
                     text: root.controller.runHistory.length > 0
                           ? qsTr("Runs (%1)").arg(root.controller.runHistory.length) : qsTr("Runs")
                 }
@@ -121,19 +126,26 @@ Pane {
                     }
                 }
             }
-            CheckBox {
-                id: compareToggle
-                objectName: "compareToggle"
-                text: qsTr("Compare")
-                enabled: tabs.currentIndex === root.resultTab && root.controller.hasResult
+            Item { Layout.fillWidth: true }
+            ComboBox {
+                id: resultMode
+                objectName: "resultModeBox"
+                visible: tabs.currentIndex === root.resultTab
+                enabled: root.controller.hasResult
+                model: [qsTr("Thread"), qsTr("Error map"), qsTr("Compare")]
+                Layout.preferredWidth: 140
                 ToolTip.visible: hovered
                 ToolTip.delay: 300
-                ToolTip.text: qsTr("Show the target image left of a movable divider")
+                ToolTip.text: qsTr("Error map: red where the result is lighter than the target, blue where darker. "
+                                   + "Compare: the target left of a movable divider.")
             }
-            CheckBox {
+            ToolButton {
                 id: pinToggle
                 text: qsTr("Pins")
+                checkable: true
                 enabled: tabs.currentIndex !== root.originalTab && tabs.currentIndex !== root.runsTab
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Show the pins with their numbers")
             }
             Button {
                 text: qsTr("Fit")
@@ -227,7 +239,7 @@ Pane {
                         Item {
                             id: compare
                             anchors.fill: parent
-                            visible: compareToggle.checked && compareToggle.enabled
+                            visible: root.showCompare
                             property real divider: 0.5
 
                             Item {
@@ -296,7 +308,7 @@ Pane {
                             id: segmentOverlay
                             anchors.fill: parent
                             visible: root.highlightSegment
-                                     && (tabs.currentIndex === root.resultTab || tabs.currentIndex === root.residualTab)
+                                     && tabs.currentIndex === root.resultTab
                                      && root.controller.hasResult && !root.controller.running
                             property var line: root.controller.currentSegmentLine
                             onLineChanged: requestPaint()
@@ -569,7 +581,7 @@ Pane {
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
                 anchors.margins: 12
-                visible: tabs.currentIndex === root.residualTab && root.imageAvailable
+                visible: root.showErrorMap && root.imageAvailable
                 opacity: 0.9
                 padding: 8
                 RowLayout {

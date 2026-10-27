@@ -365,7 +365,11 @@ stopped.
 `ThreadRenderer::residualImage` maps `enc(T) − g` to a diverging image: red
 where the result is lighter than the target (more thread would help), blue
 where it is darker, white where they match, gray where the weight is zero.
-The worker publishes it with each preview.
+The worker publishes it with each preview. In the UI it is a mode of the
+String art view (*Thread / Error map / Compare*), not a separate tab. For
+multi-colour results `ColorRenderer::residualImage` shows the luminance
+difference only; hue errors (e.g. orange instead of red) are not visible
+in it.
 
 ## Algorithm C — sequence refinement (implemented)
 

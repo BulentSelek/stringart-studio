@@ -461,10 +461,25 @@ void TestUi::playbackWorkflow()
 
     // Before/after comparison is available on the result view.
     findItem(QStringLiteral("viewTabs"))->setProperty("currentIndex", 2);
-    QQuickItem *compare = findItem(QStringLiteral("compareToggle"));
-    QVERIFY(compare);
-    QVERIFY(compare->isEnabled());
-    compare->setProperty("checked", true);
+    // The String art view shows the thread, its error map or a comparison.
+    QQuickItem *mode = findItem(QStringLiteral("resultModeBox"));
+    QVERIFY(mode);
+    QVERIFY(mode->isVisible() && mode->isEnabled());
+    QQuickItem *panel = findItem(QStringLiteral("viewTabs"))->parentItem();
+    while (panel && !panel->property("imageSource").isValid())
+        panel = panel->parentItem();
+    QVERIFY(panel);
+    QVERIFY(panel->property("imageSource").toString().contains(QStringLiteral("/result/")));
+    mode->setProperty("currentIndex", 1);
+    QVERIFY(panel->property("imageSource").toString().contains(QStringLiteral("/residual/")));
+    findItem(QStringLiteral("viewTabs"))->setProperty("currentIndex", 1);
+    QVERIFY(!mode->isVisible());
+    QVERIFY(!panel->property("showErrorMap").toBool());
+    QVERIFY(panel->property("imageSource").toString().contains(QStringLiteral("/processed/")));
+    findItem(QStringLiteral("viewTabs"))->setProperty("currentIndex", 2);
+    mode->setProperty("currentIndex", 2);
+    QVERIFY(panel->property("showCompare").toBool());
+    QVERIFY(panel->property("imageSource").toString().contains(QStringLiteral("/result/")));
 
     QTest::qWait(300);
     const QByteArray shot = qgetenv("STRINGART_UI_PLAYBACK");
@@ -511,7 +526,7 @@ void TestUi::virtualReconstruction()
     QVERIFY(m_controller->virtualError() > 0.0);
     QCOMPARE(m_store->get(QStringLiteral("virtual")).size(), QSize(512, 512));
     // The view switches to the virtual reconstruction.
-    QTRY_COMPARE(findItem(QStringLiteral("viewTabs"))->property("currentIndex").toInt(), 4);
+    QTRY_COMPARE(findItem(QStringLiteral("viewTabs"))->property("currentIndex").toInt(), 3);
     qInfo("virtual %.5f vs thread %.5f", m_controller->virtualError(), m_controller->error());
 
     QTest::qWait(300);
@@ -846,7 +861,7 @@ void TestUi::runHistory()
     QCOMPARE(newest.value(QStringLiteral("error")).toDouble(), m_controller->error());
     QVERIFY(!m_store->get(QStringLiteral("run%1").arg(oldest.value(QStringLiteral("id")).toInt())).isNull());
 
-    findItem(QStringLiteral("viewTabs"))->setProperty("currentIndex", 5);
+    findItem(QStringLiteral("viewTabs"))->setProperty("currentIndex", 4);
     QTRY_VERIFY(findItem(QStringLiteral("runsView"))->isVisible());
     QTest::qWait(300);
     const QByteArray shot = qgetenv("STRINGART_UI_RUNS");

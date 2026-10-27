@@ -42,12 +42,13 @@ own photos.
       clicking again cancels, the palette is replaced when it finishes.
 
 ## Run and results
-- [ ] *Start*; the String art and Residual views update live; the UI stays
+- [ ] *Start*; the String art view (thread and error map) updates live; the UI stays
       responsive while dragging sliders and zooming.
 - [ ] Pause / Resume / Cancel; a cancelled run keeps its partial result.
 - [ ] *Refine sequence* and *Virtual reconstruction (LS)* (single colour);
       both are disabled for multi-colour results.
-- [ ] *Compare* divider on the String art view can be dragged.
+- [ ] String art view mode: *Error map* shows red/blue with a legend;
+      *Compare* shows the target left of a divider that can be dragged.
 - [ ] Zoom with the mouse wheel around the cursor, pan by dragging, *Fit*,
       *Pins* overlay with indices.
 
