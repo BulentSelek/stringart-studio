@@ -10,6 +10,7 @@ qt_add_qml_module(stringart_ui
         qml/HelpLabel.qml
         qml/ImagePanel.qml
         qml/ParamSlider.qml
+        qml/PlaybackPanel.qml
         qml/ProgressPanel.qml
         qml/SettingsPanel.qml
     SOURCES

@@ -122,11 +122,27 @@ ApplicationWindow {
             }
         }
 
-        ImagePanel {
-            id: imagePanel
-            controller: window.controller
+        ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            spacing: 0
+
+            ImagePanel {
+                id: imagePanel
+                controller: window.controller
+                highlightSegment: playbackPanel.highlight
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+            }
+
+            PlaybackPanel {
+                id: playbackPanel
+                controller: window.controller
+                visible: window.controller.hasResult
+                Layout.fillWidth: true
+                onViewRequested: imagePanel.showView(imagePanel.resultTab)
+                onExportFrameRequested: frameDialog.open()
+            }
         }
 
         ProgressPanel {
@@ -138,6 +154,32 @@ ApplicationWindow {
             onExportSvgRequested: svgDialog.open()
             onExportJsonRequested: jsonDialog.open()
         }
+    }
+
+    // Playback shortcuts (ignored while a text field has focus).
+    Shortcut {
+        sequence: "Space"
+        enabled: playbackPanel.visible && playbackPanel.enabled
+        onActivated: {
+            if (window.controller.playing) {
+                window.controller.stopPlayback()
+            } else {
+                window.controller.play()
+                imagePanel.showView(imagePanel.resultTab)
+            }
+        }
+    }
+    Shortcut {
+        sequences: [StandardKey.MoveToPreviousChar]
+        enabled: playbackPanel.visible && playbackPanel.enabled
+        autoRepeat: true
+        onActivated: window.controller.stepPlayback(-1)
+    }
+    Shortcut {
+        sequences: [StandardKey.MoveToNextChar]
+        enabled: playbackPanel.visible && playbackPanel.enabled
+        autoRepeat: true
+        onActivated: window.controller.stepPlayback(1)
     }
 
     DropArea {
@@ -237,6 +279,19 @@ ApplicationWindow {
         onAccepted: {
             folders.exports = window.folderOf(selectedFile)
             window.controller.exportJson(selectedFile)
+        }
+    }
+
+    FileDialog {
+        id: frameDialog
+        title: qsTr("Export winding frame")
+        currentFolder: folders.exports
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "png"
+        nameFilters: [qsTr("PNG image (*.png)")]
+        onAccepted: {
+            folders.exports = window.folderOf(selectedFile)
+            window.controller.exportFrame(selectedFile)
         }
     }
 

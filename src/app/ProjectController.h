@@ -2,10 +2,12 @@
 
 #include "core/GrayImage.h"
 #include "core/PinGeometry.h"
+#include "core/PlaybackRenderer.h"
 #include "core/ProjectFile.h"
 #include "core/ThreadRenderer.h"
 
 #include <QColor>
+#include <QElapsedTimer>
 #include <QImage>
 #include <QObject>
 #include <QPointF>
@@ -96,6 +98,15 @@ private:
     Q_PROPERTY(double elapsedSeconds READ elapsedSeconds NOTIFY progressChanged)
     Q_PROPERTY(double threadLengthM READ threadLengthM NOTIFY progressChanged)
 
+    // Winding playback of the finished sequence (never re-optimizes).
+    Q_PROPERTY(int resultSegments READ resultSegments NOTIFY stateChanged)
+    Q_PROPERTY(int playbackPosition READ playbackPosition WRITE setPlaybackPosition NOTIFY playbackChanged)
+    Q_PROPERTY(bool playing READ playing NOTIFY playbackChanged)
+    Q_PROPERTY(double playbackSpeed MEMBER m_playbackSpeed NOTIFY playbackSpeedChanged)
+    Q_PROPERTY(int currentFromPin READ currentFromPin NOTIFY playbackChanged)
+    Q_PROPERTY(int currentToPin READ currentToPin NOTIFY playbackChanged)
+    Q_PROPERTY(QVariantList currentSegmentLine READ currentSegmentLine NOTIFY playbackChanged)
+
 public:
     explicit ProjectController(std::shared_ptr<ImageStore> store, QObject *parent = nullptr);
     ~ProjectController() override;
@@ -114,6 +125,10 @@ public:
     Q_INVOKABLE void exportSvg(const QUrl &url);
     Q_INVOKABLE void exportJson(const QUrl &url);
     Q_INVOKABLE bool saveProject(const QUrl &url);
+    Q_INVOKABLE void play();
+    Q_INVOKABLE void stopPlayback();
+    Q_INVOKABLE void stepPlayback(int delta);
+    Q_INVOKABLE void exportFrame(const QUrl &url);
     Q_INVOKABLE bool openProject(const QUrl &url);
 
     // Last-used parameters (frame, pins, thread, tone, run and export
@@ -144,6 +159,13 @@ public:
     [[nodiscard]] double initialError() const { return m_initialError; }
     [[nodiscard]] double elapsedSeconds() const { return m_elapsedSeconds; }
     [[nodiscard]] double threadLengthM() const { return m_threadLengthMm / 1000.0; }
+    [[nodiscard]] int resultSegments() const { return hasResult() ? static_cast<int>(m_resultSequence.size()) - 1 : 0; }
+    [[nodiscard]] int playbackPosition() const { return m_playbackPosition; }
+    void setPlaybackPosition(int position);
+    [[nodiscard]] bool playing() const { return m_playTimer.isActive(); }
+    [[nodiscard]] int currentFromPin() const;
+    [[nodiscard]] int currentToPin() const;
+    [[nodiscard]] QVariantList currentSegmentLine() const;
 
 signals:
     void layoutChanged();
@@ -157,8 +179,12 @@ signals:
     void statusTextChanged();
     void resultRevisionChanged();
     void progressChanged();
+    void playbackChanged();
+    void playbackSpeedChanged();
 
 private:
+    void setResult(std::vector<int> sequence, std::vector<float> transmittance);
+    void advancePlayback();
     [[nodiscard]] sa::FrameSpec frameSpec() const;
     [[nodiscard]] std::optional<sa::PinLayout> currentLayout() const;
     [[nodiscard]] sa::ProjectData currentSettings() const;
@@ -242,4 +268,11 @@ private:
     std::vector<float> m_resultWeights;
     std::vector<int> m_resultSequence;
     std::vector<float> m_resultTransmittance;
+
+    std::unique_ptr<sa::PlaybackRenderer> m_playback;
+    int m_playbackPosition = 0;
+    double m_playbackSpeed = 50.0; // segments per second
+    double m_playbackCarry = 0.0;  // fractional segments accumulated between ticks
+    QTimer m_playTimer;
+    QElapsedTimer m_playClock;
 };

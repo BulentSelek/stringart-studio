@@ -18,6 +18,8 @@ qt_add_library(stringart_core STATIC
     core/OptimizationProblem.h
     core/PinGeometry.cpp
     core/PinGeometry.h
+    core/PlaybackRenderer.cpp
+    core/PlaybackRenderer.h
     core/ProjectFile.cpp
     core/ProjectFile.h
     core/StringArtResult.cpp

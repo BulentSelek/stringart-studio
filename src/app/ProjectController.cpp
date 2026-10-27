@@ -14,7 +14,9 @@
 #include <QSettings>
 #include <QtConcurrent/QtConcurrentRun>
 
+#include <algorithm>
 #include <exception>
+#include <span>
 
 namespace {
 
@@ -48,6 +50,8 @@ ProjectController::ProjectController(std::shared_ptr<ImageStore> store, QObject 
     connect(this, &ProjectController::geometryChanged, this, &ProjectController::scheduleBaseUpdate);
     connect(this, &ProjectController::toneChanged, this, &ProjectController::updateProcessed);
     connect(this, &ProjectController::renderStyleChanged, this, &ProjectController::updateResultImages);
+    m_playTimer.setInterval(33);
+    connect(&m_playTimer, &QTimer::timeout, this, &ProjectController::advancePlayback);
     for (auto signal : {&ProjectController::geometryChanged, &ProjectController::layoutChanged,
                         &ProjectController::imagesChanged})
         connect(this, signal, this, &ProjectController::effectiveCropChanged);
@@ -362,6 +366,8 @@ void ProjectController::start()
         m_resultLayout = layout;
         m_resultTarget = problem.target;
         m_resultWeights = problem.weights;
+        stopPlayback();
+        m_playback.reset();
         m_resultSequence.clear();
         m_resultTransmittance.clear();
         m_segments = 0;
@@ -429,9 +435,7 @@ void ProjectController::onWorkerFinished(bool success)
     if (std::optional<sa::StringArtResult> result = m_worker->takeResult()) {
         const int segmentCount = result->segmentCount();
         m_stopReason = QString::fromUtf8(sa::toString(result->stopReason));
-        m_resultSequence = std::move(result->sequence);
-        m_resultTransmittance = std::move(result->transmittance);
-        emit stateChanged();
+        setResult(std::move(result->sequence), std::move(result->transmittance));
         setStatus(tr("Finished: %1 segments in %2 s (%3).")
                       .arg(segmentCount)
                       .arg(result->elapsedSeconds, 0, 'f', 2)
@@ -439,22 +443,137 @@ void ProjectController::onWorkerFinished(bool success)
     }
 }
 
+void ProjectController::setResult(std::vector<int> sequence, std::vector<float> transmittance)
+{
+    stopPlayback();
+    m_resultSequence = std::move(sequence);
+    m_resultTransmittance = std::move(transmittance);
+    m_playback = std::make_unique<sa::PlaybackRenderer>(*m_resultLayout, m_resultSequence,
+                                                        m_runSettings.config.threadWidth,
+                                                        m_runSettings.config.threadOpacity);
+    m_playbackPosition = m_playback->segmentCount();
+    emit stateChanged();
+    emit playbackChanged();
+    updateResultImages();
+}
+
 void ProjectController::updateResultImages()
 {
-    if (m_running || !hasResult() || !m_resultLayout)
+    if (m_running || !hasResult() || !m_resultLayout || !m_playback)
         return;
     const int w = m_resultLayout->canvasWidth();
     const int h = m_resultLayout->canvasHeight();
-    m_store->set(QStringLiteral("result"),
-                 sa::ThreadRenderer::toImage(m_resultTransmittance, w, h, m_backgroundColor, m_threadColor));
+    const std::span<const float> t = m_playback->seek(m_playbackPosition);
+    m_store->set(QStringLiteral("result"), sa::ThreadRenderer::toImage(t, w, h, m_backgroundColor, m_threadColor));
     m_store->set(QStringLiteral("residual"),
-                 sa::ThreadRenderer::residualImage(m_resultTransmittance, m_resultTarget, m_resultWeights, w, h));
+                 sa::ThreadRenderer::residualImage(t, m_resultTarget, m_resultWeights, w, h));
     ++m_resultRevision;
     emit resultRevisionChanged();
 }
 
+void ProjectController::setPlaybackPosition(int position)
+{
+    position = std::clamp(position, 0, resultSegments());
+    if (position == m_playbackPosition)
+        return;
+    m_playbackPosition = position;
+    updateResultImages();
+    emit playbackChanged();
+}
+
+int ProjectController::currentFromPin() const
+{
+    return m_playbackPosition > 0 && hasResult() ? m_resultSequence[static_cast<std::size_t>(m_playbackPosition) - 1]
+                                                 : -1;
+}
+
+int ProjectController::currentToPin() const
+{
+    return m_playbackPosition > 0 && hasResult() ? m_resultSequence[static_cast<std::size_t>(m_playbackPosition)]
+                                                 : -1;
+}
+
+QVariantList ProjectController::currentSegmentLine() const
+{
+    if (m_playbackPosition <= 0 || !hasResult() || !m_resultLayout)
+        return {};
+    const sa::Vec2 &a = m_resultLayout->pin(currentFromPin());
+    const sa::Vec2 &b = m_resultLayout->pin(currentToPin());
+    const double w = m_resultLayout->canvasWidth();
+    const double h = m_resultLayout->canvasHeight();
+    return {QPointF(a.x / w, a.y / h), QPointF(b.x / w, b.y / h)};
+}
+
+void ProjectController::play()
+{
+    if (!hasResult() || m_running || m_playTimer.isActive())
+        return;
+    if (m_playbackPosition >= resultSegments())
+        setPlaybackPosition(0);
+    m_playbackCarry = 0.0;
+    m_playClock.start();
+    m_playTimer.start();
+    emit playbackChanged();
+}
+
+void ProjectController::stopPlayback()
+{
+    if (!m_playTimer.isActive())
+        return;
+    m_playTimer.stop();
+    emit playbackChanged();
+}
+
+void ProjectController::stepPlayback(int delta)
+{
+    stopPlayback();
+    setPlaybackPosition(m_playbackPosition + delta);
+}
+
+void ProjectController::advancePlayback()
+{
+    m_playbackCarry += m_playbackSpeed * m_playClock.restart() / 1000.0;
+    const int steps = static_cast<int>(m_playbackCarry);
+    m_playbackCarry -= steps;
+    if (steps > 0)
+        setPlaybackPosition(m_playbackPosition + steps);
+    if (m_playbackPosition >= resultSegments())
+        stopPlayback();
+}
+
+void ProjectController::exportFrame(const QUrl &url)
+{
+    if (!hasResult() || m_exporting)
+        return;
+    const QString path = localPath(url);
+    const sa::PinLayout layout = *m_resultLayout;
+    const std::vector<int> sequence = m_resultSequence;
+    sa::RenderStyle style = renderStyle();
+    style.threadWidth = m_runSettings.config.threadWidth;
+    style.opacity = m_runSettings.config.threadOpacity;
+    const double scale = static_cast<double>(m_exportSize) / std::max(layout.canvasWidth(), layout.canvasHeight());
+    const auto segments = static_cast<std::size_t>(m_playbackPosition);
+
+    m_exporting = true;
+    emit stateChanged();
+    setStatus(tr("Rendering frame %1...").arg(m_playbackPosition));
+    QtConcurrent::run([path, layout, sequence, style, scale, segments] {
+        QString error;
+        sa::ExportManager::writePng(path, sa::ThreadRenderer::render(layout, sequence, style, scale, segments), &error);
+        return error;
+    }).then(this, [this, path](const QString &error) {
+        m_exporting = false;
+        emit stateChanged();
+        setStatus(error.isEmpty() ? tr("Saved %1.").arg(path) : tr("Frame export failed: %1").arg(error));
+    });
+}
+
 void ProjectController::clearResult()
 {
+    stopPlayback();
+    m_playback.reset();
+    m_playbackPosition = 0;
+    emit playbackChanged();
     m_resultSequence.clear();
     m_resultTransmittance.clear();
     m_resultLayout.reset();
@@ -609,16 +728,13 @@ bool ProjectController::openProject(const QUrl &url)
         m_runSettings = project;
         m_runSettings.imageData.clear();
         m_resultLayout = layout;
-        m_resultSequence = project.sequence;
-        m_resultTransmittance = sa::ThreadRenderer::renderTransmittance(
-            layout, m_resultSequence, project.config.threadWidth, project.config.threadOpacity);
         if (m_processed.width == layout.canvasWidth() && m_processed.height == layout.canvasHeight()) {
             const sa::OptimizationProblem problem =
                 sa::OptimizationProblem::fromImage(m_processed, layout, project.edgeEmphasis);
             m_resultTarget = problem.target;
             m_resultWeights = problem.weights;
         }
-        m_segments = static_cast<int>(m_resultSequence.size()) - 1;
+        m_segments = static_cast<int>(project.sequence.size()) - 1;
         m_runMaxSegments = project.config.maxSegments;
         m_error = project.finalError;
         m_initialError = project.initialError;
@@ -626,8 +742,9 @@ bool ProjectController::openProject(const QUrl &url)
         m_elapsedSeconds = project.elapsedSeconds;
         m_stopReason = project.stopReason;
         emit progressChanged();
-        emit stateChanged();
-        updateResultImages();
+        setResult(project.sequence, sa::ThreadRenderer::renderTransmittance(layout, project.sequence,
+                                                                            project.config.threadWidth,
+                                                                            project.config.threadOpacity));
     }
     setStatus(tr("Opened %1.").arg(QFileInfo(path).fileName()) + imageNote);
     return true;

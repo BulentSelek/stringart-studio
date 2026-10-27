@@ -13,6 +13,7 @@ Pane {
     id: root
 
     required property ProjectController controller
+    property bool highlightSegment: true
 
     readonly property int originalTab: 0
     readonly property int processedTab: 1
@@ -180,6 +181,38 @@ Pane {
                         mipmap: true
                         fillMode: Image.Stretch
                         retainWhileLoading: true
+
+                        // Current winding segment during playback.
+                        Canvas {
+                            id: segmentOverlay
+                            anchors.fill: parent
+                            visible: root.highlightSegment && tabs.currentIndex >= root.resultTab
+                                     && root.controller.hasResult && !root.controller.running
+                            property var line: root.controller.currentSegmentLine
+                            onLineChanged: requestPaint()
+                            onVisibleChanged: if (visible) requestPaint()
+                            onWidthChanged: requestPaint()
+                            onHeightChanged: requestPaint()
+                            onPaint: {
+                                const ctx = getContext("2d")
+                                ctx.reset()
+                                if (!line || line.length !== 2)
+                                    return
+                                const a = line[0], b = line[1]
+                                ctx.lineWidth = Math.max(1.5, view.zoom * 1.2)
+                                ctx.strokeStyle = "#e53935"
+                                ctx.beginPath()
+                                ctx.moveTo(a.x * width, a.y * height)
+                                ctx.lineTo(b.x * width, b.y * height)
+                                ctx.stroke()
+                                ctx.fillStyle = "#e53935"
+                                for (const p of [a, b]) {
+                                    ctx.beginPath()
+                                    ctx.arc(p.x * width, p.y * height, 5, 0, 2 * Math.PI)
+                                    ctx.fill()
+                                }
+                            }
+                        }
 
                         FrameOutline {
                             anchors.fill: parent

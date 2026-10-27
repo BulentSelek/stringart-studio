@@ -186,6 +186,18 @@ candidate.
 The output is always a single continuous thread: segment `i` joins
 `sequence[i]` and `sequence[i+1]`.
 
+## Winding playback
+
+`PlaybackRenderer` replays a finished sequence; it never re-optimizes. It
+stores the transmittance buffer every `interval` segments (interval chosen so
+the checkpoints fit 64 MiB, at least 16 segments), so seeking replays at most
+one interval and stepping forward replays only the new segments. `seek(n)`
+equals `ThreadRenderer::renderTransmittance(..., segmentLimit = n)` bit for
+bit (tested). The UI's bottom panel offers a timeline, single steps (Left /
+Right keys), play / pause (Space) at 1 – 1000 segments per second, jump to a
+segment, the current source and destination pins, a red highlight of the
+current segment, and PNG export of the current frame at the export size.
+
 ## Residual visualization
 
 `ThreadRenderer::residualImage` maps `enc(T) − g` to a diverging image: red

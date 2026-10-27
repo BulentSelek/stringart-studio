@@ -57,6 +57,11 @@ views update live, with Pause / Resume / Cancel. The mouse wheel zooms around
 the cursor, drag pans, **Fit** resets, **Pins** overlays pin markers. Export
 PNG, the winding CSV (mm or px), SVG or JSON on the right.
 
+After a run, the bottom *Winding* panel replays the sequence: drag the
+timeline, step with ◀ ▶ (or the Left / Right keys), play / pause with Space,
+choose the speed, jump to a segment, and export the current frame. The
+current segment is highlighted in red with its source and destination pins.
+
 Custom pin CSV: one pin per line, `x,y` in mm (comma, semicolon, tab or
 spaces), in perimeter order; an optional header naming `x`/`y` columns is
 honoured.

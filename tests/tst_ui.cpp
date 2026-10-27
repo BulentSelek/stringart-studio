@@ -39,6 +39,7 @@ private slots:
     void dialogFoldersPersist();
     void windowStatePersists();
     void parametersPersist();
+    void playbackWorkflow();
 
 private:
     void createUi();
@@ -393,6 +394,56 @@ void TestUi::parametersPersist()
     QSettings settings;
     fallback.restoreSettings(settings);
     QCOMPARE(fallback.property("pinCount").toInt(), 240);
+}
+
+void TestUi::playbackWorkflow()
+{
+    QVERIFY(m_controller->loadImage(m_portrait));
+    m_controller->setProperty("pinCount", 150);
+    m_controller->setProperty("maxSegments", 600);
+    m_controller->start();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
+    const int total = m_controller->resultSegments();
+    QCOMPARE(total, m_controller->segments());
+    QCOMPARE(m_controller->playbackPosition(), total);
+
+    // Seeking shows exactly the first n segments of the computed sequence.
+    m_controller->setPlaybackPosition(10);
+    QCOMPARE(m_controller->playbackPosition(), 10);
+    QVERIFY(m_controller->currentFromPin() >= 0);
+    QCOMPARE(m_controller->currentSegmentLine().size(), 2);
+    const QImage frame = m_store->get(QStringLiteral("result"));
+    const QImage partial = m_store->get(QStringLiteral("result"));
+    m_controller->setPlaybackPosition(total);
+    QVERIFY(m_store->get(QStringLiteral("result")) != partial);
+    m_controller->setPlaybackPosition(10);
+    QCOMPARE(m_store->get(QStringLiteral("result")), frame);
+    m_controller->setPlaybackPosition(-3);
+    QCOMPARE(m_controller->playbackPosition(), 0);
+    QCOMPARE(m_controller->currentFromPin(), -1);
+    m_controller->stepPlayback(5);
+    QCOMPARE(m_controller->playbackPosition(), 5);
+
+    // Playback advances on its own and stops at the end.
+    m_controller->setProperty("playbackSpeed", 1000.0);
+    m_controller->play();
+    QVERIFY(m_controller->playing());
+    QTRY_VERIFY_WITH_TIMEOUT(m_controller->playbackPosition() > 50, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->playing(), 10000);
+    QCOMPARE(m_controller->playbackPosition(), total);
+
+    // Frame export renders the selected prefix of the sequence.
+    m_controller->setPlaybackPosition(total / 2);
+    m_controller->setProperty("exportSize", 512);
+    const QString path = m_dir.filePath(QStringLiteral("frame.png"));
+    m_controller->exportFrame(QUrl::fromLocalFile(path));
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->exporting(), 30000);
+    QCOMPARE(QImage(path).size(), QSize(512, 512));
+
+    QTest::qWait(300);
+    const QByteArray shot = qgetenv("STRINGART_UI_PLAYBACK");
+    if (!shot.isEmpty())
+        QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(shot)));
 }
 
 QTEST_MAIN(TestUi)
