@@ -57,6 +57,19 @@ own photos.
 - [ ] PNG at 1024–8192 px, CSV in mm and px, SVG (open in a browser or
       Inkscape), JSON.
 
+## Workshop
+- [ ] *Pin template…* on A4: print one sheet at 100% and measure the 100 mm
+      scale bar; tape two neighbouring sheets along the dashed line and check
+      that the round marks coincide; pin numbers are readable.
+- [ ] *Pin template…* as one sheet: page size equals the frame plus margins
+      in a PDF viewer's document properties.
+- [ ] *Winding guide…*: thread lengths match the panel; multi-colour rows
+      show colour swatches and shaded thread changes.
+- [ ] *Winding mode*: large target pin, next pins, keys and a USB foot pedal
+      (Page Down / Page Up), auto-advance, *Speak pins* (needs a speech
+      engine, e.g. speech-dispatcher on Linux); Esc returns; reopening the
+      project resumes at the same step.
+
 ## Persistence
 - [ ] Close the app normally, start it again: window size / position (X11;
       Wayland decides positions itself), maximized state, selected parameter

@@ -24,6 +24,7 @@
 
 class ImageStore;
 class QSettings;
+class QTextToSpeech;
 class OptimizationWorker;
 
 // UI state and commands for the QML front end. Owns the original image, the
@@ -121,6 +122,16 @@ private:
     Q_PROPERTY(int currentFromPin READ currentFromPin NOTIFY playbackChanged)
     Q_PROPERTY(int currentToPin READ currentToPin NOTIFY playbackChanged)
     Q_PROPERTY(QVariantList currentSegmentLine READ currentSegmentLine NOTIFY playbackChanged)
+    Q_PROPERTY(int currentColorIndex READ currentColorIndex NOTIFY playbackChanged)
+    // True when the current step uses a different thread than the step before.
+    Q_PROPERTY(bool threadChangesHere READ threadChangesHere NOTIFY playbackChanged)
+
+    // Workshop: thread per colour and the hands-on winding mode. The winding
+    // position is remembered per result, so a session can resume later.
+    Q_PROPERTY(QVariantList threadUsage READ threadUsage NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList resultPinPositions READ resultPinPositions NOTIFY stateChanged)
+    Q_PROPERTY(bool winding READ winding NOTIFY windingChanged)
+    Q_PROPERTY(bool speechAvailable READ speechAvailable CONSTANT)
 
 public:
     explicit ProjectController(std::shared_ptr<ImageStore> store, QObject *parent = nullptr);
@@ -153,6 +164,15 @@ public:
     Q_INVOKABLE void stepPlayback(int delta);
     Q_INVOKABLE void exportFrame(const QUrl &url);
     Q_INVOKABLE bool openProject(const QUrl &url);
+    // Paper: 0 = A4, 1 = A3, 2 = Letter (tiled), 3 = one sheet of the frame size.
+    // Uses the result's frame when there is a result, else the current frame.
+    Q_INVOKABLE void exportPinTemplate(const QUrl &url, int paper);
+    Q_INVOKABLE void exportWindingGuide(const QUrl &url);
+    Q_INVOKABLE void beginWinding();
+    Q_INVOKABLE void endWinding();
+    // The next `count` steps after the current one: [{to, from, color}].
+    Q_INVOKABLE QVariantList stepsAhead(int count) const;
+    Q_INVOKABLE void speak(const QString &text);
 
     // Last-used parameters (frame, pins, thread, tone, run and export
     // options). Crop and rotation belong to an image and are not stored.
@@ -202,6 +222,12 @@ public:
     [[nodiscard]] int currentFromPin() const;
     [[nodiscard]] int currentToPin() const;
     [[nodiscard]] QVariantList currentSegmentLine() const;
+    [[nodiscard]] int currentColorIndex() const;
+    [[nodiscard]] bool threadChangesHere() const;
+    [[nodiscard]] QVariantList threadUsage() const;
+    [[nodiscard]] QVariantList resultPinPositions() const;
+    [[nodiscard]] bool winding() const { return m_winding; }
+    [[nodiscard]] static bool speechAvailable();
 
 signals:
     void layoutChanged();
@@ -220,12 +246,16 @@ signals:
     void colorModeChanged();
     void paletteChanged();
     void playbackSpeedChanged();
+    void windingChanged();
 
 private:
     void setResult(std::vector<int> sequence, std::vector<float> transmittance);
     void setColorResult(std::vector<sa::ColorStep> steps, std::vector<float> rgb);
     void resetResultState();
     void advancePlayback();
+    [[nodiscard]] std::vector<sa::ColorStep> resultSteps() const;
+    [[nodiscard]] std::vector<QColor> resultPalette() const;
+    [[nodiscard]] QString windingKey() const;
     [[nodiscard]] sa::FrameSpec frameSpec() const;
     [[nodiscard]] std::optional<sa::PinLayout> currentLayout() const;
     [[nodiscard]] sa::ProjectData currentSettings() const;
@@ -334,4 +364,7 @@ private:
     double m_playbackCarry = 0.0;  // fractional segments accumulated between ticks
     QTimer m_playTimer;
     QElapsedTimer m_playClock;
+
+    bool m_winding = false;
+    QTextToSpeech *m_speech = nullptr; // created on first use
 };

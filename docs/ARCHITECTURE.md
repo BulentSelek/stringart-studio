@@ -22,6 +22,7 @@ src/
 │   ├── OptimizationProblem.*  target, weights, pins; objective definition
 │   ├── StringArtResult.*      result, progress snapshot, stop reasons
 │   ├── ExportManager.*        PNG, CSV and SVG export
+│   ├── WorkshopDocuments.*    pin template and winding guide PDFs, thread usage
 │   └── ProjectFile.*          JSON project format, custom pin CSV import
 ├── algorithms/
 │   ├── IOptimizer.h           common optimizer interface
@@ -34,7 +35,8 @@ src/
 │   ├── OptimizationWorker.*   std::jthread worker, pause/resume/cancel, throttled previews
 │   ├── ImageStore.*           thread-safe image slots + QQuickImageProvider
 │   ├── main.cpp
-│   └── qml/                   Main, SettingsPanel, ImagePanel, ProgressPanel, ParamSlider
+│   └── qml/                   Main, SettingsPanel, ImagePanel, ProgressPanel, PlaybackPanel,
+│                              WindingView, ParamSlider, AccentButton, HelpLabel
 └── cli/main.cpp           stringart-cli
 tests/                     Qt Test suites (core + end-to-end UI)
 benchmarks/                stringart-benchmark + run_benchmarks.sh
@@ -228,6 +230,44 @@ Right keys), play / pause (Space) at 1 – 1000 segments per second, jump to a
 segment, the current source and destination pins, a red highlight of the
 current segment, and PNG export of the current frame at the export size.
 
+## Workshop documents and winding mode
+
+`WorkshopDocuments` (core, QPainter on QPdfWriter) produces what is needed
+to build the piece by hand:
+
+- **Pin template** (`writePinTemplatePdf`): the frame at 1:1 scale with a
+  drill crosshair and ring per pin, radial pin numbers (every pin, or every
+  2nd / 5th / 10th / 25th ... pin when they would overlap; `pinLabelStep`),
+  pin 0 in red, the frame outline, a centre mark and a 100 mm scale bar to
+  check that the printer did not rescale. Output is either one sheet of the
+  frame size (plotter / print shop) or tiles on A4, A3 or Letter. Tiles
+  share a 15 mm strip; `planTiles` centres the grid on the frame and picks
+  the orientation with fewer sheets. Each sheet carries its name (row
+  letter, column number), a sheet map, a dashed glue line in the middle of
+  each shared strip and round registration marks on it; the marks are drawn
+  in frame coordinates, so they print at the same frame position on both
+  neighbouring sheets, and they are kept 8 mm away from pins.
+- **Winding guide** (`writeWindingGuidePdf`): A4 pages with the frame
+  summary, thread per colour (start pin, segments, pin-to-pin length and
+  length with a 10% reserve), then every step in order with a tick box,
+  grouped in tens. Multi-colour rows show the colour and the source pin
+  (each colour continues from where its own thread stopped); thread changes
+  are shaded.
+- **Thread usage** (`threadUsage`): segments and length per palette colour,
+  shown under *Thread length* in the UI.
+
+**Winding mode** (`WindingView.qml`) is a full-window view on top of the
+playback position: step n of N, the source pin, the target pin in very large
+type, the next four targets, a "change thread" banner for multi-colour
+results, and the frame with every pin, numbers every ten pins and the
+current segment. Next: Space, Right, Down, Enter or Page Down (USB foot
+pedals usually send Page Down); back: Left, Up, Backspace or Page Up. An
+optional timer advances automatically. When Qt TextToSpeech is installed
+(optional at build time), the target pin can be read aloud. The position is
+stored in QSettings under a hash of the result's steps, so reopening the
+same project (or recomputing the same result) resumes winding where it
+stopped.
+
 ## Residual visualization
 
 `ThreadRenderer::residualImage` maps `enc(T) − g` to a diverging image: red
@@ -329,6 +369,7 @@ rather than an exact optimum of the reported error.
   segment with `stroke-opacity` = thread opacity so overlaps compound, plus
   pin markers. SVG viewers composite in sRGB rather than linear light, so
   mid-tones look somewhat darker than the PNG.
+- Pin template and winding guide: PDF, see *Workshop documents*.
 - JSON / project (`.sasproj`): format `stringart-studio-project`, version 1:
   `frame`, `workingSize`, `image` (path, rotation, crop, tone, optionally the
   original file bytes as base64), `optimization`, `render`, `result`

@@ -66,6 +66,13 @@ Pane {
                 Layout.minimumWidth: 260
                 horizontalAlignment: Text.AlignRight
             }
+            AccentButton {
+                objectName: "windingModeButton"
+                text: qsTr("Winding mode")
+                onClicked: root.controller.beginWinding()
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Full-screen step-by-step instructions for winding the real piece")
+            }
         }
 
         RowLayout {

@@ -5,9 +5,10 @@
 #include "core/ImageProcessor.h"
 #include "core/ProjectFile.h"
 #include "core/ThreadRenderer.h"
+#include "core/WorkshopDocuments.h"
 
 #include <QCommandLineParser>
-#include <QCoreApplication>
+#include <QGuiApplication>
 #include <QFile>
 #include <QFileInfo>
 #include <QImageReader>
@@ -47,9 +48,13 @@ double doubleOption(const QCommandLineParser &parser, const QString &name)
 
 int main(int argc, char *argv[])
 {
-    QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("stringart-cli"));
-    QCoreApplication::setApplicationVersion(QStringLiteral(PROJECT_VERSION));
+    // QGuiApplication for the fonts of the PDF documents; offscreen, so the
+    // tool also runs without a display.
+    if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM"))
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    QGuiApplication app(argc, argv);
+    QGuiApplication::setApplicationName(QStringLiteral("stringart-cli"));
+    QGuiApplication::setApplicationVersion(QStringLiteral(PROJECT_VERSION));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Generate string art from an image (greedy optimizer)."));
@@ -87,6 +92,9 @@ int main(int argc, char *argv[])
         {QStringLiteral("csv-units"), QStringLiteral("CSV units: mm or px."), QStringLiteral("unit"), QStringLiteral("mm")},
         {QStringLiteral("svg"), QStringLiteral("Output SVG path (millimetres)."), QStringLiteral("path")},
         {QStringLiteral("json"), QStringLiteral("Output JSON path (settings, pins, sequence)."), QStringLiteral("path")},
+        {QStringLiteral("template-pdf"), QStringLiteral("Output 1:1 pin template PDF path."), QStringLiteral("path")},
+        {QStringLiteral("template-paper"), QStringLiteral("Template paper: a4, a3, letter or single (one sheet of the frame size)."), QStringLiteral("paper"), QStringLiteral("a4")},
+        {QStringLiteral("guide-pdf"), QStringLiteral("Output winding guide PDF path (A4)."), QStringLiteral("path")},
         {QStringLiteral("quiet"), QStringLiteral("Do not print progress.")},
     });
     parser.process(app);
@@ -256,6 +264,37 @@ int main(int argc, char *argv[])
                                                               result.sequence, style, true, &error);
             if (!ok)
                 fail(QStringLiteral("SVG export failed: %1").arg(error));
+        }
+        if (parser.isSet(QStringLiteral("template-pdf"))) {
+            const QString paper = parser.value(QStringLiteral("template-paper"));
+            sa::TemplateOptions options;
+            if (paper == u"a4")
+                options.paper = sa::TemplatePaper::A4;
+            else if (paper == u"a3")
+                options.paper = sa::TemplatePaper::A3;
+            else if (paper == u"letter")
+                options.paper = sa::TemplatePaper::Letter;
+            else if (paper == u"single")
+                options.paper = sa::TemplatePaper::SingleSheet;
+            else
+                fail(QStringLiteral("--template-paper must be a4, a3, letter or single"));
+            options.title = sa::WorkshopDocuments::frameDescription(frame);
+            QString error;
+            if (!sa::WorkshopDocuments::writePinTemplatePdf(parser.value(QStringLiteral("template-pdf")), pins, options,
+                                                            &error))
+                fail(QStringLiteral("Template export failed: %1").arg(error));
+        }
+        if (parser.isSet(QStringLiteral("guide-pdf"))) {
+            sa::WorkshopDocuments::GuideInfo info;
+            info.title = QFileInfo(positional.first()).completeBaseName();
+            info.frameDescription = sa::WorkshopDocuments::frameDescription(frame);
+            info.palette = colorMode ? palette : std::vector<QColor>{QColor(Qt::black)};
+            const std::vector<sa::ColorStep> steps =
+                colorMode ? result.colorSteps : sa::monochromeSteps(result.sequence);
+            QString error;
+            if (!sa::WorkshopDocuments::writeWindingGuidePdf(parser.value(QStringLiteral("guide-pdf")), pins, steps,
+                                                             info, &error))
+                fail(QStringLiteral("Guide export failed: %1").arg(error));
         }
         if (parser.isSet(QStringLiteral("json"))) {
             sa::ProjectData project;

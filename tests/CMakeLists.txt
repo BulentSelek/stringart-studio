@@ -22,6 +22,7 @@ stringart_add_test(tst_playback)
 stringart_add_test(tst_sequence)
 stringart_add_test(tst_leastsquares)
 stringart_add_test(tst_color)
+stringart_add_test(tst_workshop)
 
 if(STRINGART_BUILD_APP)
     stringart_add_test(tst_ui)

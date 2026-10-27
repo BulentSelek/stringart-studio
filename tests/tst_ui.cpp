@@ -19,6 +19,8 @@
 #include <QTimer>
 #include <QtQml/QQmlExtensionPlugin>
 
+#include <cmath>
+
 Q_IMPORT_QML_PLUGIN(StringArtStudioPlugin)
 
 // Responsiveness limit for the GUI thread during a run. Sanitizer and debug
@@ -52,6 +54,7 @@ private slots:
     void refineWorkflow();
     void virtualReconstruction();
     void colourWorkflow();
+    void workshopWorkflow();
 
 private:
     void createUi();
@@ -585,12 +588,112 @@ void TestUi::colourWorkflow()
     QVERIFY(m_controller->resultIsColor());
     QCOMPARE(m_controller->resultSegments(), segments);
 
+    // One thread per used colour; together they make up the total length.
+    double usageSum = 0.0;
+    int usageSegments = 0;
+    for (const QVariant &row : m_controller->threadUsage()) {
+        usageSum += row.toMap().value(QStringLiteral("lengthM")).toDouble();
+        usageSegments += row.toMap().value(QStringLiteral("segments")).toInt();
+    }
+    QCOMPARE(usageSegments, segments);
+    QVERIFY(std::abs(usageSum - m_controller->threadLengthM()) < 0.01 * m_controller->threadLengthM());
+    bool sawChange = false;
+    for (int p = 1; p <= segments && !sawChange; ++p) {
+        m_controller->setPlaybackPosition(p);
+        sawChange = m_controller->threadChangesHere();
+    }
+    QVERIFY(sawChange);
+    m_controller->setPlaybackPosition(segments);
+
     findItem(QStringLiteral("categoryTabs"))->setProperty("currentIndex", 2);
     findItem(QStringLiteral("viewTabs"))->setProperty("currentIndex", 2);
     QTest::qWait(300);
     const QByteArray shot = qgetenv("STRINGART_UI_COLOR");
     if (!shot.isEmpty())
         QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(shot)));
+}
+
+void TestUi::workshopWorkflow()
+{
+    // The pin template needs only a frame.
+    const QString templatePath = m_dir.filePath(QStringLiteral("template.pdf"));
+    m_controller->exportPinTemplate(QUrl::fromLocalFile(templatePath), 0);
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->exporting(), 30000);
+    QFile templateFile(templatePath);
+    QVERIFY2(templateFile.open(QIODevice::ReadOnly), qPrintable(m_controller->statusText()));
+    QVERIFY(templateFile.read(4) == "%PDF");
+
+    QVERIFY(m_controller->loadImage(m_portrait));
+    m_controller->setProperty("pinCount", 150);
+    m_controller->setProperty("maxSegments", 400);
+    m_controller->start();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
+    const int total = m_controller->resultSegments();
+    QVERIFY(total > 10);
+
+    const QVariantList usage = m_controller->threadUsage();
+    QCOMPARE(usage.size(), 1);
+    QCOMPARE(usage.first().toMap().value(QStringLiteral("segments")).toInt(), total);
+    QVERIFY(std::abs(usage.first().toMap().value(QStringLiteral("lengthM")).toDouble() - m_controller->threadLengthM())
+            < 1e-6 * m_controller->threadLengthM() + 1e-9);
+
+    const QString guidePath = m_dir.filePath(QStringLiteral("guide.pdf"));
+    m_controller->exportWindingGuide(QUrl::fromLocalFile(guidePath));
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->exporting(), 30000);
+    QFile guideFile(guidePath);
+    QVERIFY2(guideFile.open(QIODevice::ReadOnly), qPrintable(m_controller->statusText()));
+    QVERIFY(guideFile.read(4) == "%PDF");
+
+    // Winding mode starts at step 1 and follows the keys.
+    QQuickItem *button = findItem(QStringLiteral("windingModeButton"));
+    QVERIFY(button);
+    QMetaObject::invokeMethod(button, "clicked");
+    QVERIFY(m_controller->winding());
+    QCOMPARE(m_controller->playbackPosition(), 1);
+    QQuickItem *target = nullptr;
+    QTRY_VERIFY((target = findItem(QStringLiteral("windingTargetPin"))) && target->isVisible());
+    QCOMPARE(target->property("text").toString(), QStringLiteral("→ %1").arg(m_controller->currentToPin()));
+    QCOMPARE(m_controller->stepsAhead(3).size(), 3);
+    QCOMPARE(m_controller->stepsAhead(3).first().toMap().value(QStringLiteral("from")).toInt(),
+             m_controller->currentToPin());
+
+    QTest::keyClick(m_window, Qt::Key_Space);
+    QCOMPARE(m_controller->playbackPosition(), 2);
+    QTest::keyClick(m_window, Qt::Key_PageDown);
+    QTest::keyClick(m_window, Qt::Key_Right);
+    QCOMPARE(m_controller->playbackPosition(), 4);
+    QTest::keyClick(m_window, Qt::Key_Left);
+    QCOMPARE(m_controller->playbackPosition(), 3);
+    QCOMPARE(target->property("text").toString(), QStringLiteral("→ %1").arg(m_controller->currentToPin()));
+    // Back stops at the first step.
+    for (int i = 0; i < 5; ++i)
+        QTest::keyClick(m_window, Qt::Key_Backspace);
+    QCOMPARE(m_controller->playbackPosition(), 1);
+    QTest::keyClick(m_window, Qt::Key_Space);
+    QTest::keyClick(m_window, Qt::Key_Space);
+
+    const QByteArray shot = qgetenv("STRINGART_UI_WINDING");
+    if (!shot.isEmpty()) {
+        QTest::qWait(300);
+        QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(shot)));
+    }
+
+    // Escape leaves winding mode and shows the whole result again.
+    QTest::keyClick(m_window, Qt::Key_Escape);
+    QTRY_VERIFY(!m_controller->winding());
+    QCOMPARE(m_controller->playbackPosition(), total);
+
+    // The position is remembered for this result, also across restarts.
+    destroyUi();
+    createUi();
+    QVERIFY(m_controller->loadImage(m_portrait));
+    m_controller->setProperty("pinCount", 150);
+    m_controller->setProperty("maxSegments", 400);
+    m_controller->start();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
+    m_controller->beginWinding();
+    QCOMPARE(m_controller->playbackPosition(), 3);
+    m_controller->endWinding();
 }
 
 QTEST_MAIN(TestUi)

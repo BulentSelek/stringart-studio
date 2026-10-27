@@ -23,6 +23,10 @@ if(STRINGART_BUILD_TESTS)
 endif()
 
 find_package(Qt6 6.8 REQUIRED COMPONENTS ${STRINGART_QT_COMPONENTS})
+if(STRINGART_BUILD_APP)
+    # Optional: spoken pin numbers in winding mode.
+    find_package(Qt6 QUIET OPTIONAL_COMPONENTS TextToSpeech)
+endif()
 
 qt_standard_project_setup(REQUIRES 6.8)
 

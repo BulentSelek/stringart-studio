@@ -153,13 +153,23 @@ ApplicationWindow {
             onExportCsvRequested: csvDialog.open()
             onExportSvgRequested: svgDialog.open()
             onExportJsonRequested: jsonDialog.open()
+            onExportTemplateRequested: paper => {
+                templateDialog.paper = paper
+                templateDialog.open()
+            }
+            onExportGuideRequested: guideDialog.open()
         }
+    }
+
+    WindingView {
+        id: windingView
+        controller: window.controller
     }
 
     // Playback shortcuts (ignored while a text field has focus).
     Shortcut {
         sequence: "Space"
-        enabled: playbackPanel.visible && playbackPanel.enabled
+        enabled: playbackPanel.visible && playbackPanel.enabled && !window.controller.winding
         onActivated: {
             if (window.controller.playing) {
                 window.controller.stopPlayback()
@@ -171,13 +181,13 @@ ApplicationWindow {
     }
     Shortcut {
         sequences: [StandardKey.MoveToPreviousChar]
-        enabled: playbackPanel.visible && playbackPanel.enabled
+        enabled: playbackPanel.visible && playbackPanel.enabled && !window.controller.winding
         autoRepeat: true
         onActivated: window.controller.stepPlayback(-1)
     }
     Shortcut {
         sequences: [StandardKey.MoveToNextChar]
-        enabled: playbackPanel.visible && playbackPanel.enabled
+        enabled: playbackPanel.visible && playbackPanel.enabled && !window.controller.winding
         autoRepeat: true
         onActivated: window.controller.stepPlayback(1)
     }
@@ -318,6 +328,33 @@ ApplicationWindow {
         onAccepted: {
             folders.exports = window.folderOf(selectedFile)
             window.controller.exportCsv(selectedFile)
+        }
+    }
+
+    FileDialog {
+        id: templateDialog
+        property int paper: 0
+        currentFolder: folders.exports
+        title: qsTr("Export pin template")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "pdf"
+        nameFilters: [qsTr("PDF document (*.pdf)")]
+        onAccepted: {
+            folders.exports = window.folderOf(selectedFile)
+            window.controller.exportPinTemplate(selectedFile, paper)
+        }
+    }
+
+    FileDialog {
+        id: guideDialog
+        currentFolder: folders.exports
+        title: qsTr("Export winding guide")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "pdf"
+        nameFilters: [qsTr("PDF document (*.pdf)")]
+        onAccepted: {
+            folders.exports = window.folderOf(selectedFile)
+            window.controller.exportWindingGuide(selectedFile)
         }
     }
 }

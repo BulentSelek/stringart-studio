@@ -5,6 +5,7 @@
 - CMake ≥ 3.21 and Ninja
 - C++20 compiler (tested: GCC 16.2; MSVC 2022 / clang should work but are untested)
 - Qt ≥ 6.8 with Core, Gui, Concurrent, Qml, Quick, QuickControls2, Widgets, Test
+- Optional: Qt TextToSpeech (spoken pin numbers in winding mode; detected automatically)
   (tested with Qt 6.12.0). WebP input needs the Qt Image Formats plugin.
 
 ## Build
@@ -84,6 +85,8 @@ honoured.
     --edge-emphasis 1.5 --rotate 0 --svg out.svg --json out.json
 ./build/src/cli/stringart-cli portrait.jpg --colors "#000000,#7a4a2a,#c9a27a" --background "#f4ecd8" \
     --png colour.png --csv colour.csv
+./build/src/cli/stringart-cli portrait.jpg --template-pdf pins.pdf --template-paper a4 \
+    --guide-pdf winding.pdf
 ./build/src/cli/stringart-cli --help
 ```
 

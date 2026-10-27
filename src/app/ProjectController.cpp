@@ -9,14 +9,20 @@
 #include "core/ExportManager.h"
 #include "core/ImageProcessor.h"
 #include "core/OptimizationProblem.h"
+#include "core/WorkshopDocuments.h"
 
 #include <QBuffer>
+#include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
 #include <QFuture>
 #include <QImageReader>
 #include <QSettings>
 #include <QtConcurrent/QtConcurrentRun>
+
+#ifdef STRINGART_HAVE_SPEECH
+#include <QTextToSpeech>
+#endif
 
 #include <algorithm>
 #include <exception>
@@ -117,16 +123,29 @@ double ProjectController::mmPerPixel() const
     return layout ? layout->mmPerUnit() : 0.0;
 }
 
-QVariantList ProjectController::pinPositions() const
+namespace {
+
+QVariantList normalizedPins(const std::optional<sa::PinLayout> &layout)
 {
     QVariantList positions;
-    const std::optional<sa::PinLayout> layout = currentLayout();
     if (!layout)
         return positions;
     positions.reserve(layout->pinCount());
     for (const sa::Vec2 &p : layout->pins())
         positions.append(QPointF(p.x / layout->canvasWidth(), p.y / layout->canvasHeight()));
     return positions;
+}
+
+} // namespace
+
+QVariantList ProjectController::resultPinPositions() const
+{
+    return hasResult() ? normalizedPins(m_resultLayout) : QVariantList();
+}
+
+QVariantList ProjectController::pinPositions() const
+{
+    return normalizedPins(currentLayout());
 }
 
 sa::ProjectData ProjectController::currentSettings() const
@@ -649,6 +668,7 @@ void ProjectController::onWorkerFinished(bool success)
 
 void ProjectController::resetResultState()
 {
+    endWinding();
     stopPlayback();
     ++m_resultGeneration;
     m_virtualLines = 0;
@@ -721,6 +741,10 @@ void ProjectController::setPlaybackPosition(int position)
     m_playbackPosition = position;
     updateResultImages();
     emit playbackChanged();
+    if (m_winding) {
+        QSettings settings;
+        settings.setValue(windingKey(), m_playbackPosition);
+    }
 }
 
 int ProjectController::currentFromPin() const
@@ -940,6 +964,180 @@ void ProjectController::exportJson(const QUrl &url)
         error = QString::fromUtf8(e.what());
     }
     setStatus(ok ? tr("Saved %1.").arg(path) : tr("JSON export failed: %1").arg(error));
+}
+
+// ---------------------------------------------------------------- workshop
+
+std::vector<sa::ColorStep> ProjectController::resultSteps() const
+{
+    return resultIsColor() ? m_resultColorSteps : sa::monochromeSteps(m_resultSequence);
+}
+
+std::vector<QColor> ProjectController::resultPalette() const
+{
+    return resultIsColor() ? m_runSettings.palette : std::vector<QColor>{m_threadColor};
+}
+
+QVariantList ProjectController::threadUsage() const
+{
+    QVariantList rows;
+    if (!hasResult() || !m_resultLayout)
+        return rows;
+    const std::vector<sa::ColorStep> steps = resultSteps();
+    const std::vector<QColor> palette = resultPalette();
+    for (const sa::ThreadUsage &u : sa::threadUsage(*m_resultLayout, steps, palette)) {
+        if (u.segments > 0) {
+            rows.append(QVariantMap{{QStringLiteral("color"), u.color},
+                                    {QStringLiteral("segments"), u.segments},
+                                    {QStringLiteral("lengthM"), u.lengthMm / 1000.0}});
+        }
+    }
+    return rows;
+}
+
+int ProjectController::currentColorIndex() const
+{
+    if (!resultIsColor() || m_playbackPosition <= 0)
+        return 0;
+    return m_resultColorSteps[static_cast<std::size_t>(m_playbackPosition) - 1].color;
+}
+
+bool ProjectController::threadChangesHere() const
+{
+    if (!resultIsColor() || m_playbackPosition <= 1)
+        return false;
+    const auto i = static_cast<std::size_t>(m_playbackPosition) - 1;
+    return m_resultColorSteps[i].color != m_resultColorSteps[i - 1].color;
+}
+
+QVariantList ProjectController::stepsAhead(int count) const
+{
+    QVariantList steps;
+    if (!hasResult())
+        return steps;
+    const int total = resultSegments();
+    for (int k = m_playbackPosition + 1; k <= std::min(total, m_playbackPosition + count); ++k) {
+        const auto i = static_cast<std::size_t>(k) - 1;
+        const sa::ColorStep s = resultIsColor() ? m_resultColorSteps[i]
+                                                : sa::ColorStep{0, m_resultSequence[i], m_resultSequence[i + 1]};
+        steps.append(QVariantMap{{QStringLiteral("from"), s.from},
+                                 {QStringLiteral("to"), s.to},
+                                 {QStringLiteral("color"), s.color}});
+    }
+    return steps;
+}
+
+QString ProjectController::windingKey() const
+{
+    // Identifies the result, so reopening the same project resumes winding.
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    if (resultIsColor()) {
+        for (const sa::ColorStep &s : m_resultColorSteps)
+            hash.addData(QByteArrayView(reinterpret_cast<const char *>(&s), sizeof(s)));
+    } else {
+        hash.addData(QByteArrayView(reinterpret_cast<const char *>(m_resultSequence.data()),
+                                    static_cast<qsizetype>(m_resultSequence.size() * sizeof(int))));
+    }
+    return QStringLiteral("Winding/") + QString::fromLatin1(hash.result().toHex().left(16));
+}
+
+void ProjectController::beginWinding()
+{
+    if (!hasResult() || m_running || m_winding)
+        return;
+    stopPlayback();
+    const int saved = QSettings().value(windingKey(), 1).toInt();
+    m_winding = true;
+    emit windingChanged();
+    setPlaybackPosition(std::clamp(saved, 1, resultSegments()));
+    setStatus(tr("Winding mode: step %1 of %2.").arg(m_playbackPosition).arg(resultSegments()));
+}
+
+void ProjectController::endWinding()
+{
+    if (!m_winding)
+        return;
+    m_winding = false;
+    emit windingChanged();
+    setStatus(tr("Winding paused at step %1 of %2; winding mode resumes there.")
+                  .arg(m_playbackPosition)
+                  .arg(resultSegments()));
+    setPlaybackPosition(resultSegments());
+}
+
+bool ProjectController::speechAvailable()
+{
+#ifdef STRINGART_HAVE_SPEECH
+    return !QTextToSpeech::availableEngines().isEmpty();
+#else
+    return false;
+#endif
+}
+
+void ProjectController::speak(const QString &text)
+{
+#ifdef STRINGART_HAVE_SPEECH
+    if (!m_speech)
+        m_speech = new QTextToSpeech(this);
+    m_speech->stop();
+    m_speech->say(text);
+#else
+    Q_UNUSED(text);
+#endif
+}
+
+void ProjectController::exportPinTemplate(const QUrl &url, int paper)
+{
+    if (m_exporting)
+        return;
+    const std::optional<sa::PinLayout> layout = hasResult() ? m_resultLayout : currentLayout();
+    if (!layout) {
+        setStatus(tr("The frame settings are invalid."));
+        return;
+    }
+    sa::TemplateOptions options;
+    options.paper = static_cast<sa::TemplatePaper>(std::clamp(paper, 0, 3));
+    options.title = sa::WorkshopDocuments::frameDescription(hasResult() ? m_runSettings.frame : frameSpec());
+    const QString path = localPath(url);
+    m_exporting = true;
+    emit stateChanged();
+    setStatus(tr("Writing the pin template..."));
+    QtConcurrent::run([path, layout = *layout, options] {
+        QString error;
+        sa::WorkshopDocuments::writePinTemplatePdf(path, layout, options, &error);
+        const int pages = sa::planTiles(sa::WorkshopDocuments::templateContentMm(layout), options).pageCount();
+        return std::pair{error, pages};
+    }).then(this, [this, path](const std::pair<QString, int> &outcome) {
+        m_exporting = false;
+        emit stateChanged();
+        setStatus(outcome.first.isEmpty()
+                      ? tr("Saved %1 (%n sheet(s)). Print at 100% and check the scale bar.", nullptr, outcome.second)
+                            .arg(path)
+                      : tr("Template export failed: %1").arg(outcome.first));
+    });
+}
+
+void ProjectController::exportWindingGuide(const QUrl &url)
+{
+    if (!hasResult() || m_exporting)
+        return;
+    sa::WorkshopDocuments::GuideInfo info;
+    info.title = m_imageName.isEmpty() ? tr("String art") : QFileInfo(m_imageName).completeBaseName();
+    info.frameDescription = sa::WorkshopDocuments::frameDescription(m_runSettings.frame);
+    info.palette = resultPalette();
+    const QString path = localPath(url);
+    m_exporting = true;
+    emit stateChanged();
+    setStatus(tr("Writing the winding guide..."));
+    QtConcurrent::run([path, layout = *m_resultLayout, steps = resultSteps(), info] {
+        QString error;
+        sa::WorkshopDocuments::writeWindingGuidePdf(path, layout, steps, info, &error);
+        return error;
+    }).then(this, [this, path](const QString &error) {
+        m_exporting = false;
+        emit stateChanged();
+        setStatus(error.isEmpty() ? tr("Saved %1.").arg(path) : tr("Guide export failed: %1").arg(error));
+    });
 }
 
 // ---------------------------------------------------------------- projects
