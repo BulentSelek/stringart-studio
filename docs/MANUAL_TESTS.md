@@ -14,22 +14,21 @@ own photos.
 - [ ] Open / Save project; reopen the file after restarting the app.
 - [ ] Each file dialog reopens in the last folder used for that kind of file.
 
-## Image page
-- [ ] Brightness / contrast / gamma / invert update the *Processed* view and
-      the histogram immediately.
-- [ ] Rotation slider and ±90° buttons rotate the *Original* view.
-- [ ] Crop frame on *Original*: drag to move, corner handle keeps the aspect,
-      frame can extend beyond the photo (white area), *Fit whole photo*,
-      *Reset crop*.
-- [ ] Hovering a parameter label shows its help tooltip.
-
-## Frame page
-- [ ] Circle / Ellipse / Rectangle change the outline on *Processed*.
-- [ ] Ellipse / Rectangle: the crop frame's side handles change the aspect
-      and the *Height (mm)* field follows.
+## Frame page (shape and placement together, *Original* view)
+- [ ] Circle / Ellipse / Rectangle change the yellow frame on the photo;
+      Ellipse / Rectangle side handles change the aspect and *Height (mm)*
+      follows.
+- [ ] Crop frame: drag to move, corner handle keeps the aspect, frame can
+      extend beyond the photo (white area), *Fit whole photo*, *Reset crop*.
+- [ ] Rotation slider and ±90° buttons rotate the photo.
 - [ ] Custom: *Import CSV…* with a pin file (x, y in mm); invalid files show
       an error.
 - [ ] *Advanced* section opens and closes.
+- [ ] Hovering a parameter label shows its help tooltip.
+
+## Tone page (*Processed* view)
+- [ ] Brightness / contrast / gamma / invert update the *Processed* view and
+      the histogram immediately.
 
 ## Thread page
 - [ ] Single colour: palette presets change the result colours without

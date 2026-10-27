@@ -168,9 +168,9 @@ ApplicationWindow {
             onImportPinsRequested: pinsDialog.open()
             // Show the view that matches the selected parameter group.
             onCurrentCategoryChanged: {
-                if (settings.currentCategory === settings.imageCategory)
-                    imagePanel.showView(imagePanel.originalTab)
-                else if (settings.currentCategory === settings.frameCategory)
+                if (settings.currentCategory === settings.frameCategory)
+                    imagePanel.showView(imagePanel.originalTab) // crop frame editable here
+                else if (settings.currentCategory === settings.toneCategory)
                     imagePanel.showView(imagePanel.processedTab)
             }
         }

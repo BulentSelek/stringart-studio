@@ -8,7 +8,8 @@ import QtQuick.Layouts
 
 import StringArtStudio
 
-// Parameters grouped by workflow step: Image → Frame → Thread → Run. Each
+// Parameters grouped by workflow step: Frame (shape and placement on the
+// photo) → Tone → Thread → Run. Each
 // page shows the essential settings; secondary ones sit in a collapsed
 // "Advanced" section.
 Pane {
@@ -16,8 +17,8 @@ Pane {
 
     required property ProjectController controller
 
-    readonly property int imageCategory: 0
-    readonly property int frameCategory: 1
+    readonly property int frameCategory: 0
+    readonly property int toneCategory: 1
     property alias currentCategory: categories.currentIndex
     // Shared width of input controls so their right edges and sizes line up.
     readonly property int fieldWidth: 150
@@ -141,8 +142,8 @@ Pane {
             id: categories
             objectName: "categoryTabs"
             Layout.fillWidth: true
-            TabButton { text: qsTr("1 Image") }
-            TabButton { text: qsTr("2 Frame") }
+            TabButton { text: qsTr("1 Frame") }
+            TabButton { text: qsTr("2 Tone") }
             TabButton { text: qsTr("3 Thread") }
             TabButton { text: qsTr("4 Run") }
         }
@@ -152,7 +153,140 @@ Pane {
             Layout.fillHeight: true
             currentIndex: categories.currentIndex
 
-            // ------------------------------------------------------- Image
+            // ------------------------------------------------------- Frame
+            // Shape and placement on the photo together: both are edited on
+            // the Original view.
+            Page {
+                SectionLabel { text: qsTr("Shape") }
+                ComboField {
+                    label: qsTr("Shape")
+                    help: qsTr("Physical frame the pins are mounted on. Custom reads pin positions (x, y in mm) from a CSV file.")
+                    enabled: !root.controller.running
+                    model: [qsTr("Circle"), qsTr("Ellipse"), qsTr("Rectangle"), qsTr("Custom (CSV)")]
+                    currentIndex: root.controller.frameShape
+                    onActivated: index => {
+                        if (index === ProjectController.Custom && root.controller.customPinCount === 0)
+                            root.importPinsRequested()
+                        else
+                            root.controller.frameShape = index
+                    }
+                }
+                IntField {
+                    visible: root.controller.frameShape !== ProjectController.Custom
+                    label: root.controller.frameShape === ProjectController.Circle ? qsTr("Diameter (mm)")
+                                                                                   : qsTr("Width (mm)")
+                    help: qsTr("Physical size of the pin frame; used for thread length and exported coordinates.")
+                    from: 50; to: 5000; stepSize: 10
+                    value: Math.round(root.controller.frameWidthMm)
+                    enabled: !root.controller.running
+                    onModified: v => root.controller.frameWidthMm = v
+                }
+                IntField {
+                    visible: root.controller.frameShape === ProjectController.Ellipse
+                             || root.controller.frameShape === ProjectController.Rectangle
+                    label: qsTr("Height (mm)")
+                    help: qsTr("Width and height set the frame aspect. The side handles of the crop frame change it too.")
+                    from: 50; to: 5000; stepSize: 10
+                    value: Math.round(root.controller.frameHeightMm)
+                    enabled: !root.controller.running
+                    onModified: v => root.controller.frameHeightMm = v
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: root.controller.frameShape === ProjectController.Custom
+                    Label {
+                        text: qsTr("%1 pins imported").arg(root.controller.customPinCount)
+                        opacity: 0.85
+                        Layout.fillWidth: true
+                    }
+                    Button {
+                        text: qsTr("Import CSV…")
+                        enabled: !root.controller.running
+                        onClicked: root.importPinsRequested()
+                    }
+                }
+
+                SectionLabel { text: qsTr("Position") }
+                ParamSlider {
+                    Layout.fillWidth: true
+                    label: qsTr("Rotation")
+                    help: qsTr("Rotates the photo clockwise. New corners are empty canvas.")
+                    from: -180; to: 180; stepSize: 0.5
+                    decimals: 1
+                    suffix: "°"
+                    value: root.controller.rotation
+                    onMoved: v => root.controller.rotation = v
+                }
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 2
+                    columnSpacing: 4
+                    rowSpacing: 0
+                    Button {
+                        text: qsTr("⟲ 90°")
+                        flat: true
+                        Layout.fillWidth: true
+                        onClicked: root.controller.rotateBy(-90)
+                    }
+                    Button {
+                        text: qsTr("⟳ 90°")
+                        flat: true
+                        Layout.fillWidth: true
+                        onClicked: root.controller.rotateBy(90)
+                    }
+                    Button {
+                        text: qsTr("Fit whole photo")
+                        flat: true
+                        enabled: root.controller.hasImage
+                        Layout.fillWidth: true
+                        onClicked: root.controller.fitWholeImage()
+                    }
+                    Button {
+                        text: qsTr("Reset crop")
+                        flat: true
+                        enabled: root.controller.crop.width > 0
+                        Layout.fillWidth: true
+                        onClicked: root.controller.resetCrop()
+                    }
+                }
+                Hint { text: qsTr("Move or resize the yellow frame on the photo. It may extend beyond the photo; the extra area stays empty.") }
+                SectionLabel { text: qsTr("Pins") }
+                IntField {
+                    visible: root.controller.frameShape !== ProjectController.Custom
+                    label: qsTr("Pin count")
+                    help: qsTr("More pins give finer detail but more winding work. Typical: 200 – 300.")
+                    from: 3; to: 2000
+                    value: root.controller.pinCount
+                    enabled: !root.controller.running
+                    onModified: v => root.controller.pinCount = v
+                }
+                IntField {
+                    label: qsTr("Min. separation")
+                    help: qsTr("Minimum number of pins between the two ends of a thread. Prevents short threads along the rim.")
+                    from: 1; to: 1000
+                    value: root.controller.minSeparation
+                    enabled: !root.controller.running
+                    onModified: v => root.controller.minSeparation = v
+                }
+                Hint {
+                    text: qsTr("Canvas %1 × %2 px · %3 mm per px")
+                          .arg(root.controller.canvasWidth).arg(root.controller.canvasHeight)
+                          .arg(root.controller.mmPerPixel.toFixed(3))
+                }
+
+                Advanced {
+                    IntField {
+                        label: qsTr("Start pin")
+                        help: qsTr("Pin where winding begins. Pin 0 is at the top (top-left corner for rectangles).")
+                        from: 0; to: 19999
+                        value: root.controller.startPin
+                        enabled: !root.controller.running
+                        onModified: v => root.controller.startPin = v
+                    }
+                }
+            }
+
+            // -------------------------------------------------------- Tone
             Page {
                 SectionLabel { text: qsTr("Tone") }
                 ParamSlider {
@@ -213,137 +347,6 @@ Pane {
                     }
                 }
 
-                SectionLabel { text: qsTr("Position") }
-                ParamSlider {
-                    Layout.fillWidth: true
-                    label: qsTr("Rotation")
-                    help: qsTr("Rotates the photo clockwise. New corners are empty canvas.")
-                    from: -180; to: 180; stepSize: 0.5
-                    decimals: 1
-                    suffix: "°"
-                    value: root.controller.rotation
-                    onMoved: v => root.controller.rotation = v
-                }
-                GridLayout {
-                    Layout.fillWidth: true
-                    columns: 2
-                    columnSpacing: 4
-                    rowSpacing: 0
-                    Button {
-                        text: qsTr("⟲ 90°")
-                        flat: true
-                        Layout.fillWidth: true
-                        onClicked: root.controller.rotateBy(-90)
-                    }
-                    Button {
-                        text: qsTr("⟳ 90°")
-                        flat: true
-                        Layout.fillWidth: true
-                        onClicked: root.controller.rotateBy(90)
-                    }
-                    Button {
-                        text: qsTr("Fit whole photo")
-                        flat: true
-                        enabled: root.controller.hasImage
-                        Layout.fillWidth: true
-                        onClicked: root.controller.fitWholeImage()
-                    }
-                    Button {
-                        text: qsTr("Reset crop")
-                        flat: true
-                        enabled: root.controller.crop.width > 0
-                        Layout.fillWidth: true
-                        onClicked: root.controller.resetCrop()
-                    }
-                }
-                Hint { text: qsTr("Move or resize the yellow frame on the Original view. It may extend beyond the photo; the extra area stays empty.") }
-            }
-
-            // ------------------------------------------------------- Frame
-            Page {
-                SectionLabel { text: qsTr("Shape") }
-                ComboField {
-                    label: qsTr("Shape")
-                    help: qsTr("Physical frame the pins are mounted on. Custom reads pin positions (x, y in mm) from a CSV file.")
-                    enabled: !root.controller.running
-                    model: [qsTr("Circle"), qsTr("Ellipse"), qsTr("Rectangle"), qsTr("Custom (CSV)")]
-                    currentIndex: root.controller.frameShape
-                    onActivated: index => {
-                        if (index === ProjectController.Custom && root.controller.customPinCount === 0)
-                            root.importPinsRequested()
-                        else
-                            root.controller.frameShape = index
-                    }
-                }
-                IntField {
-                    visible: root.controller.frameShape !== ProjectController.Custom
-                    label: root.controller.frameShape === ProjectController.Circle ? qsTr("Diameter (mm)")
-                                                                                   : qsTr("Width (mm)")
-                    help: qsTr("Physical size of the pin frame; used for thread length and exported coordinates.")
-                    from: 50; to: 5000; stepSize: 10
-                    value: Math.round(root.controller.frameWidthMm)
-                    enabled: !root.controller.running
-                    onModified: v => root.controller.frameWidthMm = v
-                }
-                IntField {
-                    visible: root.controller.frameShape === ProjectController.Ellipse
-                             || root.controller.frameShape === ProjectController.Rectangle
-                    label: qsTr("Height (mm)")
-                    help: qsTr("Width and height set the frame aspect. The side handles of the crop frame change it too.")
-                    from: 50; to: 5000; stepSize: 10
-                    value: Math.round(root.controller.frameHeightMm)
-                    enabled: !root.controller.running
-                    onModified: v => root.controller.frameHeightMm = v
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: root.controller.frameShape === ProjectController.Custom
-                    Label {
-                        text: qsTr("%1 pins imported").arg(root.controller.customPinCount)
-                        opacity: 0.85
-                        Layout.fillWidth: true
-                    }
-                    Button {
-                        text: qsTr("Import CSV…")
-                        enabled: !root.controller.running
-                        onClicked: root.importPinsRequested()
-                    }
-                }
-
-                SectionLabel { text: qsTr("Pins") }
-                IntField {
-                    visible: root.controller.frameShape !== ProjectController.Custom
-                    label: qsTr("Pin count")
-                    help: qsTr("More pins give finer detail but more winding work. Typical: 200 – 300.")
-                    from: 3; to: 2000
-                    value: root.controller.pinCount
-                    enabled: !root.controller.running
-                    onModified: v => root.controller.pinCount = v
-                }
-                IntField {
-                    label: qsTr("Min. separation")
-                    help: qsTr("Minimum number of pins between the two ends of a thread. Prevents short threads along the rim.")
-                    from: 1; to: 1000
-                    value: root.controller.minSeparation
-                    enabled: !root.controller.running
-                    onModified: v => root.controller.minSeparation = v
-                }
-                Hint {
-                    text: qsTr("Canvas %1 × %2 px · %3 mm per px")
-                          .arg(root.controller.canvasWidth).arg(root.controller.canvasHeight)
-                          .arg(root.controller.mmPerPixel.toFixed(3))
-                }
-
-                Advanced {
-                    IntField {
-                        label: qsTr("Start pin")
-                        help: qsTr("Pin where winding begins. Pin 0 is at the top (top-left corner for rectangles).")
-                        from: 0; to: 19999
-                        value: root.controller.startPin
-                        enabled: !root.controller.running
-                        onModified: v => root.controller.startPin = v
-                    }
-                }
             }
 
             // ------------------------------------------------------ Thread
