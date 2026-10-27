@@ -44,6 +44,7 @@ target_link_libraries(stringart-studio
         stringart_ui
         stringart_uiplugin
         Qt6::QuickControls2
+        Qt6::Widgets
 )
 
 set_target_properties(stringart-studio PROPERTIES

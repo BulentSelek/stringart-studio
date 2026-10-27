@@ -4,7 +4,7 @@
 
 - CMake ≥ 3.21 and Ninja
 - C++20 compiler (tested: GCC 16.2; MSVC 2022 / clang should work but are untested)
-- Qt ≥ 6.8 with Core, Gui, Concurrent, Qml, Quick, QuickControls2, Test
+- Qt ≥ 6.8 with Core, Gui, Concurrent, Qml, Quick, QuickControls2, Widgets, Test
   (tested with Qt 6.12.0). WebP input needs the Qt Image Formats plugin.
 
 ## Build

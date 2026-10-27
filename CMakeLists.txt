@@ -16,7 +16,7 @@ option(STRINGART_BUILD_BENCHMARKS "Build the benchmark tool" ON)
 
 set(STRINGART_QT_COMPONENTS Core Gui Concurrent)
 if(STRINGART_BUILD_APP)
-    list(APPEND STRINGART_QT_COMPONENTS Qml Quick QuickControls2)
+    list(APPEND STRINGART_QT_COMPONENTS Qml Quick QuickControls2 Widgets)
 endif()
 if(STRINGART_BUILD_TESTS)
     list(APPEND STRINGART_QT_COMPONENTS Test)

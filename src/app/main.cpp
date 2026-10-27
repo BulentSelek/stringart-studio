@@ -1,8 +1,8 @@
 #include "ImageStore.h"
 #include "ProjectController.h"
 
+#include <QApplication>
 #include <QDir>
-#include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QSettings>
@@ -15,7 +15,11 @@ int main(int argc, char *argv[])
     // Compact Material controls so each parameter page fits without scrolling.
     if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_MATERIAL_VARIANT"))
         qputenv("QT_QUICK_CONTROLS_MATERIAL_VARIANT", "Dense");
-    QGuiApplication app(argc, argv);
+    // QApplication (not QGuiApplication): desktop platform themes such as KDE
+    // Plasma only provide their native file dialogs to widget applications.
+    // Without them Qt falls back to its QML dialog, whose Material sidebar
+    // draws folder names in black on the dark theme.
+    QApplication app(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("String Art Studio"));
     QGuiApplication::setOrganizationName(QStringLiteral("StringArtStudio"));
     QQuickStyle::setStyle(QStringLiteral("Material"));
