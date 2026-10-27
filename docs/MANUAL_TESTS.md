@@ -46,7 +46,6 @@ own photos.
 - [ ] *Start*; the String art view (thread and error map) updates live; the UI stays
       responsive while dragging sliders and zooming.
 - [ ] Pause / Resume / Cancel; a cancelled run keeps its partial result.
-- [ ] *Refine sequence* (single colour); disabled for multi-colour results.
 - [ ] String art view mode: *Error map* shows red/blue with a legend;
       *Compare* shows the target left of a divider that can be dragged.
 - [ ] Zoom with the mouse wheel around the cursor, pan by dragging, *Fit*,

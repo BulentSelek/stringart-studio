@@ -531,7 +531,7 @@ Pane {
                         currentIndex: root.controller.layerOrder
                         onActivated: index => root.controller.layerOrder = index
                     }
-                    Hint { text: qsTr("Each colour is a separate continuous thread. Colour thread portraits typically combine black and white with a few colours and use about 8000 lines (Run page). Sequence refinement is single-colour only.") }
+                    Hint { text: qsTr("Each colour is a separate continuous thread. Colour thread portraits typically combine black and white with a few colours and use about 8000 lines (Run page).") }
                 }
 
                 ColorDialog {
@@ -603,22 +603,6 @@ Pane {
                         value: Math.round(root.controller.maxLengthM)
                         enabled: !root.controller.running
                         onModified: v => root.controller.maxLengthM = v
-                    }
-                    IntField {
-                        label: qsTr("Refine passes")
-                        help: qsTr("Sweeps of \"Refine sequence\" over the whole thread (stops earlier when a sweep finds nothing).")
-                        from: 1; to: 50
-                        value: root.controller.refinePasses
-                        enabled: !root.controller.running
-                        onModified: v => root.controller.refinePasses = v
-                    }
-                    IntField {
-                        label: qsTr("Refine reach (pins)")
-                        help: qsTr("\"Refine sequence\" tries moving each pin up to this many positions along the frame. 0 = all pins (slower).")
-                        from: 0; to: 1000
-                        value: root.controller.refineNeighborhood
-                        enabled: !root.controller.running
-                        onModified: v => root.controller.refineNeighborhood = v
                     }
                     Switch {
                         text: qsTr("Allow repeated lines")

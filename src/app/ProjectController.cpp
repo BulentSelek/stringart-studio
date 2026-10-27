@@ -5,7 +5,6 @@
 #include "algorithms/GreedyOptimizer.h"
 #include "algorithms/LayeredColorOptimizer.h"
 #include "algorithms/PaletteSuggester.h"
-#include "algorithms/SequenceOptimizer.h"
 #include "core/ExportManager.h"
 #include "core/ImageProcessor.h"
 #include "core/LineRasterizer.h"
@@ -578,7 +577,6 @@ void ProjectController::start()
         m_stopReason.clear();
         emit progressChanged();
 
-        m_refining = false;
         if (settings.colorMode) {
             if (m_processedRgb.isNull())
                 throw std::invalid_argument("colour image is not ready");
@@ -598,38 +596,6 @@ void ProjectController::start()
     } catch (const std::exception &e) {
         setStatus(tr("Invalid settings: %1").arg(QString::fromUtf8(e.what())));
     }
-}
-
-void ProjectController::refineSequence()
-{
-    if (m_running || !hasResult() || !m_resultLayout || m_resultTarget.empty())
-        return;
-    if (resultIsColor()) {
-        setStatus(tr("Sequence refinement is available for single-colour results only."));
-        return;
-    }
-    if (m_runSettings.config.threadOpacity * sa::maxLineCoverage(m_runSettings.config.threadWidth) >= 0.999) {
-        setStatus(tr("Sequence refinement needs an opacity below 1 or a thinner thread."));
-        return;
-    }
-    sa::OptimizationProblem problem;
-    problem.width = m_resultLayout->canvasWidth();
-    problem.height = m_resultLayout->canvasHeight();
-    problem.target = m_resultTarget;
-    problem.weights = m_resultWeights;
-    problem.pins = *m_resultLayout;
-
-    stopPlayback();
-    m_refining = true;
-    m_refineStartError = m_initialError;
-    m_runMaxSegments = static_cast<int>(m_resultSequence.size()) - 1;
-    sa::SequenceRefinementSettings settings;
-    settings.maxPasses = m_refinePasses;
-    settings.neighborhood = m_refineNeighborhood;
-    m_worker->start(std::make_unique<sa::SequenceOptimizer>(m_resultSequence, settings), std::move(problem),
-                    m_runSettings.config, renderStyle());
-    setState(true, false);
-    setStatus(tr("Refining the sequence..."));
 }
 
 void ProjectController::pause()
@@ -682,23 +648,6 @@ void ProjectController::onWorkerFinished(bool success)
     }
     if (std::optional<sa::StringArtResult> result = m_worker->takeResult()) {
         const int segmentCount = result->segmentCount();
-        if (m_refining) {
-            m_refining = false;
-            m_initialError = m_refineStartError; // keep the empty-canvas baseline for the reduction figure
-            m_error = result->finalError;
-            m_segments = segmentCount;
-            m_elapsedSeconds += result->elapsedSeconds;
-            emit progressChanged();
-            setResult(std::move(result->sequence), std::move(result->transmittance));
-            recordRun();
-            setStatus(tr("Refined in %1 s: error %2 → %3, %4 segments (%5).")
-                          .arg(result->elapsedSeconds, 0, 'f', 2)
-                          .arg(result->initialError, 0, 'f', 5)
-                          .arg(result->finalError, 0, 'f', 5)
-                          .arg(segmentCount)
-                          .arg(QString::fromUtf8(sa::toString(result->stopReason))));
-            return;
-        }
         m_stopReason = QString::fromUtf8(sa::toString(result->stopReason));
         if (!result->colorSteps.empty())
             setColorResult(std::move(result->colorSteps), std::move(result->rgb));
@@ -1504,8 +1453,6 @@ void ProjectController::saveSettings(QSettings &settings) const
     settings.setValue(QStringLiteral("project"), sa::ProjectFile::toJson(parameters, false, false));
     settings.setValue(QStringLiteral("exportSize"), m_exportSize);
     settings.setValue(QStringLiteral("csvMillimeters"), m_csvMillimeters);
-    settings.setValue(QStringLiteral("refinePasses"), m_refinePasses);
-    settings.setValue(QStringLiteral("refineNeighborhood"), m_refineNeighborhood);
     settings.endGroup();
 }
 
@@ -1515,9 +1462,6 @@ void ProjectController::restoreSettings(QSettings &settings)
     const QByteArray json = settings.value(QStringLiteral("project")).toByteArray();
     m_exportSize = settings.value(QStringLiteral("exportSize"), m_exportSize).toInt();
     m_csvMillimeters = settings.value(QStringLiteral("csvMillimeters"), m_csvMillimeters).toBool();
-    m_refinePasses = std::clamp(settings.value(QStringLiteral("refinePasses"), m_refinePasses).toInt(), 1, 50);
-    m_refineNeighborhood =
-        std::clamp(settings.value(QStringLiteral("refineNeighborhood"), m_refineNeighborhood).toInt(), 0, 1000);
     settings.endGroup();
     emit settingsChanged();
     if (json.isEmpty())

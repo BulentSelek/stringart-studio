@@ -6,7 +6,7 @@
 
 namespace sa {
 
-enum class StopReason { MaxSegments, NoImprovement, NoValidCandidates, MaxThreadLength, Cancelled, MaxPasses };
+enum class StopReason { MaxSegments, NoImprovement, NoValidCandidates, MaxThreadLength, Cancelled };
 
 [[nodiscard]] const char *toString(StopReason reason) noexcept;
 

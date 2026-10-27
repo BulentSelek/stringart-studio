@@ -115,22 +115,17 @@ Avoid evaluating every candidate by repeatedly rendering the full image.
 
 Precompute line pixel coverage or use efficient incremental line scoring.
 
-#### Algorithm B: Sequence Optimization
+#### Algorithm B: Layer Refinement (multi-colour)
 
-Implement a refinement method that improves an existing continuous pin sequence.
+Multi-colour results are wound layer by layer: each colour is one continuous thread wound completely before the next.
 
-Potential techniques:
+After a first build of all layers, refine each layer again while the other layers stay fixed (block coordinate descent), scoring every line by the exact change of the full colour objective through the layers below and above.
 
-- Local search
-- Beam search
-- Limited lookahead
-- Simulated annealing
+Keep a rebuilt layer only if the error decreases, so refinement never makes the result worse.
 
-Start with one fully functional and testable method.
+Optimization must preserve the continuous-thread constraint within each colour: consecutive segments of a colour share an endpoint.
 
-Optimization must preserve the continuous-thread constraint: consecutive segments share an endpoint.
-
-Clearly document the objective function and complexity of each method.
+Clearly document the objective function and complexity.
 
 ## 4. Rendering Engine
 
@@ -299,7 +294,7 @@ StringArtStudio/
 │   ├── algorithms/
 │   │   ├── IOptimizer.h
 │   │   ├── GreedyOptimizer.h/.cpp
-│   │   └── SequenceOptimizer.h/.cpp
+│   │   └── LayeredColorOptimizer.h/.cpp
 │   ├── application/
 │   │   ├── ProjectController.h/.cpp
 │   │   ├── OptimizationWorker.h/.cpp
@@ -391,8 +386,7 @@ Do not proceed to complex algorithms before validating the MVP.
 
 ### Phase 4 — Advanced Features
 
-- Sequence optimization
-- Colored strings
+- Colored strings wound in layers, with layer refinement
 - Playback
 - Optional CUDA backend
 

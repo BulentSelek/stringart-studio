@@ -21,7 +21,7 @@
 
 class ImageStore;
 
-// Runs an optimizer (greedy or sequence refinement) on a dedicated
+// Runs an optimizer (greedy or layered colour) on a dedicated
 // std::jthread. The GUI thread only receives throttled notifications: at most
 // every kPreviewIntervalMs the worker renders the thread image and the
 // residual map into the shared ImageStore and emits progressed(); the

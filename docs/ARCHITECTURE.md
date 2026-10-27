@@ -27,9 +27,8 @@ src/
 ├── algorithms/
 │   ├── IOptimizer.h           common optimizer interface
 │   ├── GreedyOptimizer.*      Algorithm A
-│   ├── LayeredColorOptimizer.* multi-colour threads wound in layers
-│   ├── PaletteSuggester.*     thread colours from the image (multi-colour)
-│   └── SequenceOptimizer.*    Algorithm B
+│   ├── LayeredColorOptimizer.* multi-colour threads wound in layers (Algorithm B: layer refinement)
+│   └── PaletteSuggester.*     thread colours from the image (multi-colour)
 ├── app/                   stringart_ui (QML module "StringArtStudio") + stringart-studio
 │   ├── ProjectController.*    UI state and commands exposed to QML
 │   ├── OptimizationWorker.*   std::jthread worker, pause/resume/cancel, throttled previews
@@ -84,9 +83,7 @@ soften overlaps. Measured on the synthetic portrait (512 px, 500 mm, 240
 pins): 0.3 mm with opacity 1.0 gave error 0.0449 (1884 segments before no
 line helped), opacity 0.65 gave 0.0389 (3042); on a Mona Lisa photo
 opacity 1.0 was better (0.0185 vs 0.0226), so the right value depends on
-the image. Sequence refinement needs `opacity × maxLineCoverage(width) < 1`
-(it removes a thread by dividing by `1 − a·c`), which an opaque thread
-thinner than 0.7 px satisfies.
+the image.
 
 ## Preprocessing pipeline
 
@@ -254,8 +251,7 @@ The result is a list of steps `(colour, from pin, to pin)`, layer by layer;
 (tested). Exports: CSV with `color` / `color_hex` columns and per-colour
 cumulative length, SVG with one stroke colour per line, project/JSON with
 `color.palette`, `color.layerOrder` and `result.steps` (per-colour
-continuity is validated on load). Sequence refinement is single-colour
-only.
+continuity is validated on load).
 
 Measured (CLI, 512 px, 240 pins, 6000 steps, palette black, white, red,
 blue, yellow on white, 2026-10-27; error = per-channel weighted MSE). The
@@ -389,41 +385,17 @@ multi-colour results `ColorRenderer::residualImage` shows the luminance
 difference only; hue errors (e.g. orange instead of red) are not visible
 in it.
 
-## Algorithm B — sequence refinement (implemented)
+## Tried and not adopted: single-thread sequence refinement
 
-`SequenceOptimizer` (an `IOptimizer`) improves an existing continuous
-sequence by local search. Moves at position *i* with neighbours
-`a = s[i-1], b = s[i], c = s[i+1]`:
-
-| move | change | when |
-|---|---|---|
-| relocate | `(a,b),(b,c) → (a,p),(p,c)`, `p` within ± *reach* pins of `b` (all pins if 0) | always |
-| delete | `(a,b),(b,c) → (a,c)` | optional (`changeSegmentCount`) |
-| insert | `(a,b) → (a,p),(p,b)`, any `p` | optional, while below `maxSegments` |
-
-The start pin is fixed and every move keeps consecutive segments sharing an
-endpoint, so the result is still one continuous thread; moves respect the
-separation, `canConnect`, repeated-line and maximum-length rules. The change
-of the objective is exact: with the multiplicative model a segment is removed
-by dividing by `(1 − a·c)` and added by multiplying, so only the pixels of the
-affected lines are evaluated (requires opacity < 1). The best improving move
-per position is applied (deterministic ties), positions are swept in order,
-and sweeps repeat until one finds nothing or *passes* is reached; `T` is
-re-rendered exactly after each sweep. Tests check exactness (after
-convergence, no single relocation improves the fully recomputed error),
-continuity, constraints and thread-count independence.
-
-Complexity per sweep: `O(n · K · L)` with `K` = 2·reach relocations (+ all
-pins for insertions while below the budget).
-
-Measured effect (512 px synthetic portrait, 240 pins): on a greedy result
-that used its full 3000-segment budget, refinement lowers the error by
-≈ 0.02 % (reach 20, 2 s) to 0.07 % (all pins, 5 sweeps, 7 s). Greedy is
-already close to a local optimum for these moves; the gain is larger on
-sequences that did not come from greedy (≈ 10 % or more on a naive
-sequence in the tests) and when the segment budget leaves room for
-insertions. Available as *Refine sequence* in the UI and `--refine-passes` /
-`--refine-neighborhood` in the CLI.
+A local search on the finished single-colour thread (relocate, delete or
+insert one pin; exact change of the objective by dividing out removed
+segments; continuity kept) was implemented and tested, then removed: on a
+greedy result it lowered the error by only ≈ 0.02–0.07 % for 2–7 s
+(e.g. 0.126971 → 0.126966), because greedy is already close to a local
+optimum for these moves. It helped only on sequences that did not come from
+greedy, which the program never produces. Refinement that matters lives in
+the multi-colour layers (*Layered colours* above: rebuilding each layer with
+the others fixed lowered the error by 16–52 % against the first build).
 
 ### Tried and not adopted: greedy lookahead
 

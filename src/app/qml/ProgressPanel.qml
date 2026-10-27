@@ -65,16 +65,6 @@ Pane {
                     onClicked: root.controller.start()
                 }
 
-                Button {
-                    text: qsTr("Refine sequence")
-                    enabled: root.controller.hasResult && !root.controller.running && !root.controller.resultIsColor
-                    Layout.fillWidth: true
-                    onClicked: root.controller.refineSequence()
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 300
-                    ToolTip.text: qsTr("Local search on the finished thread: moves, removes or inserts single pins where that lowers the error. The thread stays continuous.")
-                }
-
                 RowLayout {
                     Layout.fillWidth: true
 

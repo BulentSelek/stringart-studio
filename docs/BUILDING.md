@@ -53,17 +53,14 @@ hover (?):
    layer order) into part of the optimization; each colour becomes its own
    continuous thread, wound layer by layer.
 4. **Run** — effort (Low / Medium / High working resolution), max.
-   segments, edge emphasis; *Advanced*: max. thread length, repeated lines,
-   refinement passes and reach.
+   segments, edge emphasis; *Advanced*: max. thread length, repeated lines.
 
 Press **Start** on the right (Pause / Resume / Cancel while it runs). The
 *String art* view updates live; its mode selector shows the thread, the
 *Error map* (red: lighter than the target, blue: darker) or *Compare* (the
 target left of a draggable divider). The mouse wheel zooms around the
-cursor, drag pans, **Fit** resets, **Pins** overlays numbered pins. After a
-run, **Refine sequence** runs a local search on the finished thread that
-moves, removes or inserts single pins where that lowers the error; the
-thread stays continuous. The *Runs* view keeps the finished runs of the
+cursor, drag pans, **Fit** resets, **Pins** overlays numbered pins. The
+*Runs* view keeps the finished runs of the
 current image side by side. Toolbar: undo / redo of parameter changes
 (Ctrl+Z, Ctrl+Shift+Z) and named presets.
 
@@ -111,8 +108,8 @@ cd build && ctest --output-on-failure
 ```
 
 Suites: `tst_geometry`, `tst_imageprocessor`, `tst_optimizer`, `tst_export`,
-`tst_project`, `tst_playback`, `tst_sequence`, `tst_leastsquares`,
-`tst_color`, `tst_ui`. A sanitizer build also passes:
+`tst_project`, `tst_playback`, `tst_color`, `tst_workshop`, `tst_palette`,
+`tst_ui`. A sanitizer build also passes:
 
 ```bash
 cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSTRINGART_BUILD_BENCHMARKS=OFF \

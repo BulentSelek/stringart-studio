@@ -1,7 +1,6 @@
 #include "algorithms/GreedyOptimizer.h"
 #include "algorithms/LayeredColorOptimizer.h"
 #include "algorithms/PaletteSuggester.h"
-#include "algorithms/SequenceOptimizer.h"
 #include "core/ColorRenderer.h"
 #include "core/ExportManager.h"
 #include "core/ImageProcessor.h"
@@ -79,8 +78,6 @@ int main(int argc, char *argv[])
         {QStringLiteral("rotate"), QStringLiteral("Rotate the input clockwise by degrees."), QStringLiteral("deg"), QStringLiteral("0")},
         {QStringLiteral("colors"), QStringLiteral("Multi-colour mode: comma-separated thread colours, e.g. #000000,#b03a2e, or auto:N to suggest N colours from the image."), QStringLiteral("list")},
         {QStringLiteral("background"), QStringLiteral("Board colour for multi-colour mode."), QStringLiteral("color"), QStringLiteral("#ffffff")},
-        {QStringLiteral("refine-passes"), QStringLiteral("Sequence refinement passes after greedy (0 = off)."), QStringLiteral("n"), QStringLiteral("0")},
-        {QStringLiteral("refine-neighborhood"), QStringLiteral("Refinement candidates within +-n pins (0 = all)."), QStringLiteral("n"), QStringLiteral("20")},
         {QStringLiteral("edge-emphasis"), QStringLiteral("Extra error weight on edges (0 = plain MSE)."), QStringLiteral("k"), QStringLiteral("0")},
         {QStringLiteral("brightness"), QStringLiteral("Brightness offset [-1, 1]."), QStringLiteral("v"), QStringLiteral("0")},
         {QStringLiteral("contrast"), QStringLiteral("Contrast multiplier."), QStringLiteral("v"), QStringLiteral("1")},
@@ -228,23 +225,6 @@ int main(int argc, char *argv[])
             });
         if (!quiet)
             std::fprintf(stderr, "\n");
-
-        const int refinePasses = intOption(parser, QStringLiteral("refine-passes"));
-        if (refinePasses > 0 && colorMode)
-            fail(QStringLiteral("--refine-passes is available for single-colour runs only"));
-        if (refinePasses > 0) {
-            const double greedyError = result.finalError;
-            const double greedySeconds = result.elapsedSeconds;
-            sa::SequenceOptimizer refiner(result.sequence,
-                                          {refinePasses, intOption(parser, QStringLiteral("refine-neighborhood"))});
-            const double initialError = result.initialError;
-            result = refiner.optimize(problem, config);
-            std::printf("refinement:      %.6f -> %.6f, %d moves in %d passes, %.3f s (%s)\n", greedyError,
-                        result.finalError, refiner.improvements(), refiner.passes(), result.elapsedSeconds,
-                        sa::toString(result.stopReason));
-            result.initialError = initialError;
-            result.elapsedSeconds += greedySeconds;
-        }
 
         std::printf("segments:        %d\n", result.segmentCount());
         std::printf("stop reason:     %s\n", sa::toString(result.stopReason));

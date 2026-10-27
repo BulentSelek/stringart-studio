@@ -67,8 +67,6 @@ private:
     Q_PROPERTY(double threadWidthPx READ threadWidthPx NOTIFY threadWidthPxChanged)
     Q_PROPERTY(double maxLengthM MEMBER m_maxLengthM NOTIFY settingsChanged)
     Q_PROPERTY(bool allowRepeats MEMBER m_allowRepeats NOTIFY settingsChanged)
-    Q_PROPERTY(int refinePasses MEMBER m_refinePasses NOTIFY settingsChanged)
-    Q_PROPERTY(int refineNeighborhood MEMBER m_refineNeighborhood NOTIFY settingsChanged)
     Q_PROPERTY(double edgeEmphasis MEMBER m_edgeEmphasis NOTIFY settingsChanged)
     // Multi-colour mode: palette colours are optimized, not just displayed.
     Q_PROPERTY(bool colorMode MEMBER m_colorMode NOTIFY colorModeChanged)
@@ -164,8 +162,6 @@ public:
     Q_INVOKABLE void suggestPalette(int count);
     Q_INVOKABLE void cancelPaletteSuggestion();
     Q_INVOKABLE void start();
-    // Algorithm B on the current result (continuous thread preserved).
-    Q_INVOKABLE void refineSequence();
     Q_INVOKABLE void pause();
     Q_INVOKABLE void resume();
     Q_INVOKABLE void cancel();
@@ -330,10 +326,6 @@ private:
 
     double m_maxLengthM = 0.0;
     bool m_allowRepeats = false;
-    int m_refinePasses = 3;
-    int m_refineNeighborhood = 20;
-    bool m_refining = false;
-    double m_refineStartError = 0.0;
     double m_edgeEmphasis = 0.0;
     bool m_colorMode = false;
     // Black and white plus a few colours, as in layered colour thread portraits.
