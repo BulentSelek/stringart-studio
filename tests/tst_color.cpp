@@ -1,6 +1,9 @@
 #include "algorithms/ColorGreedyOptimizer.h"
 #include "algorithms/GreedyOptimizer.h"
 #include "core/ColorRenderer.h"
+#include "core/ExportManager.h"
+#include "core/PlaybackRenderer.h"
+#include "core/ProjectFile.h"
 #include "core/ImageProcessor.h"
 
 #include "SyntheticImages.h"
@@ -69,6 +72,9 @@ private slots:
     void twoColourImage();
     void renderMatchesOptimizer();
     void invalidInput();
+    void playbackMatchesRenderer();
+    void colourExports();
+    void colourProjectRoundTrip();
 };
 
 void TestColor::singleBlackMatchesGrayscale()
@@ -201,6 +207,90 @@ void TestColor::invalidInput()
     auto wrong = setup.target;
     wrong[1].pop_back();
     QVERIFY_THROWS_EXCEPTION(std::invalid_argument, run({Qt::black}, wrong));
+}
+
+namespace {
+
+std::vector<ColorStep> sampleSteps()
+{
+    // Two threads starting at pin 0, interleaved.
+    return {{0, 0, 10}, {1, 0, 15}, {0, 10, 25}, {1, 15, 3}, {0, 25, 8}};
+}
+
+} // namespace
+
+void TestColor::playbackMatchesRenderer()
+{
+    const PinLayout layout = PinLayout::circular(30, 64, 64);
+    const std::vector<QColor> palette{QColor(200, 0, 0), QColor(0, 0, 200)};
+    std::vector<ColorStep> steps;
+    std::vector<int> current{0, 0};
+    for (int i = 0; i < 200; ++i) {
+        const int c = (i * 7) % 2;
+        const int next = (current[static_cast<std::size_t>(c)] + 11 + i % 5) % 30;
+        steps.push_back({c, current[static_cast<std::size_t>(c)], next});
+        current[static_cast<std::size_t>(c)] = next;
+    }
+    ColorPlaybackRenderer playback(layout, steps, palette, QColor(240, 230, 200), 1.2, 0.3f);
+    for (int target : {200, 0, 1, 77, 76, 150, 3}) {
+        const auto rgb = playback.seek(target);
+        const std::vector<float> reference = ColorRenderer::renderRgb(layout, steps, palette, QColor(240, 230, 200),
+                                                                      1.2, 0.3f, 1.0, static_cast<std::size_t>(target));
+        QVERIFY2(std::equal(rgb.begin(), rgb.end(), reference.begin(), reference.end()),
+                 qPrintable(QString::number(target)));
+    }
+}
+
+void TestColor::colourExports()
+{
+    const PinLayout layout = PinLayout::circular(30, 102, 102, 100.0);
+    const std::vector<QColor> palette{QColor(200, 0, 0), QColor(0, 0, 200)};
+    const std::vector<ColorStep> steps = sampleSteps();
+    const QStringList csv =
+        ExportManager::colorCsvText(layout, steps, palette, LengthUnit::Millimeters).split(u'\n', Qt::SkipEmptyParts);
+    QCOMPARE(csv.size(), 6);
+    QVERIFY(csv[0].startsWith(QStringLiteral("step,color,color_hex,from_pin,to_pin")));
+    QVERIFY(csv[2].startsWith(QStringLiteral("2,1,#0000c8,0,15,")));
+    // Cumulative length is per colour.
+    const double first = csv[1].split(u',')[9].toDouble();
+    const double third = csv[3].split(u',')[9].toDouble();
+    QVERIFY(std::abs(csv[3].split(u',')[10].toDouble() - (first + third)) < 0.02);
+
+    const QString svg = ExportManager::colorSvgText(layout, steps, palette, Qt::white, 1.0, 0.3f, true);
+    QCOMPARE(svg.count(QStringLiteral("<line ")), 5);
+    QCOMPARE(svg.count(QStringLiteral("stroke=\"#c80000\"")), 3);
+    QCOMPARE(svg.count(QStringLiteral("stroke=\"#0000c8\"")), 2);
+    QCOMPARE(svg.count(QStringLiteral("<circle ")), 30);
+    QVERIFY(svg.trimmed().endsWith(QStringLiteral("</svg>")));
+}
+
+void TestColor::colourProjectRoundTrip()
+{
+    ProjectData project;
+    project.frame.pinCount = 30;
+    project.config.minPinSeparation = 1;
+    project.colorMode = true;
+    project.palette = {QColor(200, 0, 0), QColor(0, 0, 200)};
+    project.colorBackground = QColor(240, 230, 200);
+    project.colorSteps = sampleSteps();
+    const ProjectData loaded = ProjectFile::fromJson(ProjectFile::toJson(project, false, false));
+    QVERIFY(loaded.colorMode);
+    QCOMPARE(loaded.palette, project.palette);
+    QCOMPARE(loaded.colorBackground, project.colorBackground);
+    QCOMPARE(loaded.colorSteps, project.colorSteps);
+    QVERIFY(loaded.sequence.empty());
+
+    // Broken continuity is rejected.
+    project.colorSteps[2].from = 11;
+    QVERIFY_THROWS_EXCEPTION(std::runtime_error,
+                             static_cast<void>(ProjectFile::fromJson(ProjectFile::toJson(project, false, false))));
+    // Single-colour projects carry no colour section.
+    ProjectData mono;
+    mono.frame.pinCount = 30;
+    mono.config.minPinSeparation = 1;
+    mono.sequence = {0, 10, 20};
+    QVERIFY(!ProjectFile::toJson(mono, false, false).contains("\"color\""));
+    QVERIFY(!ProjectFile::fromJson(ProjectFile::toJson(mono, false, false)).colorMode);
 }
 
 QTEST_GUILESS_MAIN(TestColor)

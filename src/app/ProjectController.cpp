@@ -2,6 +2,7 @@
 
 #include "ImageStore.h"
 #include "OptimizationWorker.h"
+#include "algorithms/ColorGreedyOptimizer.h"
 #include "algorithms/GreedyOptimizer.h"
 #include "algorithms/LeastSquaresOptimizer.h"
 #include "algorithms/SequenceOptimizer.h"
@@ -53,6 +54,7 @@ ProjectController::ProjectController(std::shared_ptr<ImageStore> store, QObject 
     connect(this, &ProjectController::geometryChanged, this, &ProjectController::scheduleBaseUpdate);
     connect(this, &ProjectController::toneChanged, this, &ProjectController::updateProcessed);
     connect(this, &ProjectController::renderStyleChanged, this, &ProjectController::updateResultImages);
+    connect(this, &ProjectController::colorModeChanged, this, &ProjectController::scheduleBaseUpdate);
     m_playTimer.setInterval(33);
     connect(&m_playTimer, &QTimer::timeout, this, &ProjectController::advancePlayback);
     for (auto signal : {&ProjectController::geometryChanged, &ProjectController::layoutChanged,
@@ -147,6 +149,9 @@ sa::ProjectData ProjectController::currentSettings() const
     p.edgeEmphasis = m_edgeEmphasis;
     p.threadColor = m_threadColor;
     p.backgroundColor = m_backgroundColor;
+    p.colorMode = m_colorMode;
+    p.palette = m_palette;
+    p.colorBackground = m_colorBackground;
     return p;
 }
 
@@ -161,6 +166,7 @@ sa::ProjectData ProjectController::projectForSaving() const
     p.threadColor = m_threadColor;
     p.backgroundColor = m_backgroundColor;
     p.sequence = m_resultSequence;
+    p.colorSteps = m_resultColorSteps;
     p.stopReason = m_stopReason;
     p.initialError = m_initialError;
     p.finalError = m_error;
@@ -193,6 +199,12 @@ void ProjectController::applySettings(const sa::ProjectData &p)
     m_edgeEmphasis = p.edgeEmphasis;
     m_threadColor = p.threadColor;
     m_backgroundColor = p.backgroundColor;
+    m_colorMode = p.colorMode;
+    if (!p.palette.empty())
+        m_palette = p.palette;
+    m_colorBackground = p.colorBackground;
+    emit colorModeChanged();
+    emit paletteChanged();
     emit layoutChanged();
     emit settingsChanged();
     emit toneChanged();
@@ -283,6 +295,53 @@ QRectF ProjectController::effectiveCrop() const
     return sa::ImageProcessor::effectiveCrop(m_rotatedSize, canvasWidth(), canvasHeight(), m_crop);
 }
 
+QVariantList ProjectController::palette() const
+{
+    QVariantList colors;
+    for (const QColor &c : m_palette)
+        colors.append(c);
+    return colors;
+}
+
+void ProjectController::addPaletteColor(const QColor &color)
+{
+    if (static_cast<int>(m_palette.size()) >= sa::ColorGreedyOptimizer::kMaxColors || !color.isValid())
+        return;
+    m_palette.push_back(color);
+    emit paletteChanged();
+}
+
+void ProjectController::removePaletteColor(int index)
+{
+    if (index < 0 || index >= static_cast<int>(m_palette.size()) || m_palette.size() <= 1)
+        return;
+    m_palette.erase(m_palette.begin() + index);
+    emit paletteChanged();
+}
+
+void ProjectController::setPaletteColor(int index, const QColor &color)
+{
+    if (index < 0 || index >= static_cast<int>(m_palette.size()) || !color.isValid())
+        return;
+    m_palette[static_cast<std::size_t>(index)] = color;
+    emit paletteChanged();
+}
+
+void ProjectController::setPalette(const QVariantList &colors, const QColor &background)
+{
+    std::vector<QColor> palette;
+    for (const QVariant &v : colors) {
+        const QColor c = v.value<QColor>();
+        if (c.isValid() && static_cast<int>(palette.size()) < sa::ColorGreedyOptimizer::kMaxColors)
+            palette.push_back(c);
+    }
+    if (palette.empty() || !background.isValid())
+        return;
+    m_palette = std::move(palette);
+    m_colorBackground = background;
+    emit paletteChanged();
+}
+
 void ProjectController::scheduleBaseUpdate()
 {
     if (!m_source.isNull())
@@ -307,6 +366,8 @@ void ProjectController::updateBase()
     m_store->set(QStringLiteral("original"), rotated);
     ++m_originalRevision;
     m_base = sa::ImageProcessor::prepareBase(rotated, canvasWidth(), canvasHeight(), m_crop, 0.0);
+    m_baseRgb = m_colorMode ? sa::ImageProcessor::prepareBaseRgb(rotated, canvasWidth(), canvasHeight(), m_crop, 0.0)
+                            : sa::RgbImage{};
     updateProcessed();
 }
 
@@ -314,8 +375,15 @@ void ProjectController::updateProcessed()
 {
     if (m_base.isNull())
         return;
-    m_processed = sa::ImageProcessor::applyTone(m_base, {m_brightness, m_contrast, m_gamma, m_invert});
-    m_store->set(QStringLiteral("processed"), sa::ImageProcessor::toQImage(m_processed));
+    const sa::ToneSettings tone{m_brightness, m_contrast, m_gamma, m_invert};
+    m_processed = sa::ImageProcessor::applyTone(m_base, tone);
+    if (m_colorMode && !m_baseRgb.isNull()) {
+        m_processedRgb = sa::ImageProcessor::applyTone(m_baseRgb, tone);
+        m_store->set(QStringLiteral("processed"), sa::ImageProcessor::toQImage(m_processedRgb));
+    } else {
+        m_processedRgb = {};
+        m_store->set(QStringLiteral("processed"), sa::ImageProcessor::toQImage(m_processed));
+    }
     m_histogram.clear();
     for (int count : sa::ImageProcessor::histogram(m_processed))
         m_histogram.append(count);
@@ -371,8 +439,10 @@ void ProjectController::start()
         m_resultWeights = problem.weights;
         stopPlayback();
         m_playback.reset();
+        m_colorPlayback.reset();
         m_resultSequence.clear();
         m_resultTransmittance.clear();
+        m_resultColorSteps.clear();
         m_segments = 0;
         m_runMaxSegments = settings.config.maxSegments;
         m_error = m_initialError = m_elapsedSeconds = m_threadLengthMm = 0.0;
@@ -380,7 +450,17 @@ void ProjectController::start()
         emit progressChanged();
 
         m_refining = false;
-        m_worker->start(std::make_unique<sa::GreedyOptimizer>(), std::move(problem), settings.config, renderStyle());
+        if (settings.colorMode) {
+            if (m_processedRgb.isNull())
+                throw std::invalid_argument("colour image is not ready");
+            m_resultColorTarget = m_processedRgb.channels;
+            m_worker->start(std::make_unique<sa::ColorGreedyOptimizer>(m_processedRgb.channels, settings.palette,
+                                                                       settings.colorBackground),
+                            std::move(problem), settings.config, renderStyle(), m_processedRgb.channels);
+        } else {
+            m_worker->start(std::make_unique<sa::GreedyOptimizer>(), std::move(problem), settings.config,
+                            renderStyle());
+        }
         setState(true, false);
         setStatus(tr("Optimizing..."));
     } catch (const std::exception &e) {
@@ -392,6 +472,10 @@ void ProjectController::refineSequence()
 {
     if (m_running || !hasResult() || !m_resultLayout || m_resultTarget.empty())
         return;
+    if (resultIsColor()) {
+        setStatus(tr("Sequence refinement is available for single-colour results only."));
+        return;
+    }
     if (m_runSettings.config.threadOpacity >= 0.999f) {
         setStatus(tr("Sequence refinement needs a thread opacity below 1."));
         return;
@@ -420,6 +504,10 @@ void ProjectController::computeVirtual()
 {
     if (m_running || m_computingVirtual || !hasResult() || !m_resultLayout || m_resultTarget.empty())
         return;
+    if (resultIsColor()) {
+        setStatus(tr("The virtual reconstruction is available for single-colour results only."));
+        return;
+    }
     const float opacity = m_runSettings.config.threadOpacity;
     if (opacity <= 0.0f || opacity >= 0.999f) {
         setStatus(tr("The virtual reconstruction needs a thread opacity between 0 and 1."));
@@ -548,7 +636,10 @@ void ProjectController::onWorkerFinished(bool success)
             return;
         }
         m_stopReason = QString::fromUtf8(sa::toString(result->stopReason));
-        setResult(std::move(result->sequence), std::move(result->transmittance));
+        if (!result->colorSteps.empty())
+            setColorResult(std::move(result->colorSteps));
+        else
+            setResult(std::move(result->sequence), std::move(result->transmittance));
         setStatus(tr("Finished: %1 segments in %2 s (%3).")
                       .arg(segmentCount)
                       .arg(result->elapsedSeconds, 0, 'f', 2)
@@ -556,13 +647,36 @@ void ProjectController::onWorkerFinished(bool success)
     }
 }
 
-void ProjectController::setResult(std::vector<int> sequence, std::vector<float> transmittance)
+void ProjectController::resetResultState()
 {
     stopPlayback();
     ++m_resultGeneration;
     m_virtualLines = 0;
     m_virtualError = 0.0;
     emit virtualChanged();
+    m_playback.reset();
+    m_colorPlayback.reset();
+    m_resultSequence.clear();
+    m_resultTransmittance.clear();
+    m_resultColorSteps.clear();
+}
+
+void ProjectController::setColorResult(std::vector<sa::ColorStep> steps)
+{
+    resetResultState();
+    m_resultColorSteps = std::move(steps);
+    m_colorPlayback = std::make_unique<sa::ColorPlaybackRenderer>(
+        *m_resultLayout, m_resultColorSteps, m_runSettings.palette, m_runSettings.colorBackground,
+        m_runSettings.config.threadWidth, m_runSettings.config.threadOpacity);
+    m_playbackPosition = m_colorPlayback->segmentCount();
+    emit stateChanged();
+    emit playbackChanged();
+    updateResultImages();
+}
+
+void ProjectController::setResult(std::vector<int> sequence, std::vector<float> transmittance)
+{
+    resetResultState();
     m_resultSequence = std::move(sequence);
     m_resultTransmittance = std::move(transmittance);
     m_playback = std::make_unique<sa::PlaybackRenderer>(*m_resultLayout, m_resultSequence,
@@ -576,10 +690,21 @@ void ProjectController::setResult(std::vector<int> sequence, std::vector<float> 
 
 void ProjectController::updateResultImages()
 {
-    if (m_running || !hasResult() || !m_resultLayout || !m_playback)
+    if (m_running || !hasResult() || !m_resultLayout)
         return;
     const int w = m_resultLayout->canvasWidth();
     const int h = m_resultLayout->canvasHeight();
+    if (m_colorPlayback) {
+        const std::span<const float> rgb = m_colorPlayback->seek(m_playbackPosition);
+        m_store->set(QStringLiteral("result"), sa::ColorRenderer::toImage(rgb, w, h));
+        m_store->set(QStringLiteral("residual"),
+                     sa::ColorRenderer::residualImage(rgb, m_resultColorTarget, m_resultWeights, w, h));
+        ++m_resultRevision;
+        emit resultRevisionChanged();
+        return;
+    }
+    if (!m_playback)
+        return;
     const std::span<const float> t = m_playback->seek(m_playbackPosition);
     m_store->set(QStringLiteral("result"), sa::ThreadRenderer::toImage(t, w, h, m_backgroundColor, m_threadColor));
     m_store->set(QStringLiteral("residual"),
@@ -600,14 +725,29 @@ void ProjectController::setPlaybackPosition(int position)
 
 int ProjectController::currentFromPin() const
 {
-    return m_playbackPosition > 0 && hasResult() ? m_resultSequence[static_cast<std::size_t>(m_playbackPosition) - 1]
-                                                 : -1;
+    if (m_playbackPosition <= 0 || !hasResult())
+        return -1;
+    if (resultIsColor())
+        return m_resultColorSteps[static_cast<std::size_t>(m_playbackPosition) - 1].from;
+    return m_resultSequence[static_cast<std::size_t>(m_playbackPosition) - 1];
 }
 
 int ProjectController::currentToPin() const
 {
-    return m_playbackPosition > 0 && hasResult() ? m_resultSequence[static_cast<std::size_t>(m_playbackPosition)]
-                                                 : -1;
+    if (m_playbackPosition <= 0 || !hasResult())
+        return -1;
+    if (resultIsColor())
+        return m_resultColorSteps[static_cast<std::size_t>(m_playbackPosition) - 1].to;
+    return m_resultSequence[static_cast<std::size_t>(m_playbackPosition)];
+}
+
+QColor ProjectController::currentThreadColor() const
+{
+    if (resultIsColor() && m_playbackPosition > 0) {
+        const int c = m_resultColorSteps[static_cast<std::size_t>(m_playbackPosition) - 1].color;
+        return m_runSettings.palette.at(static_cast<std::size_t>(c));
+    }
+    return m_threadColor;
 }
 
 QVariantList ProjectController::currentSegmentLine() const
@@ -670,13 +810,19 @@ void ProjectController::exportFrame(const QUrl &url)
     style.opacity = m_runSettings.config.threadOpacity;
     const double scale = static_cast<double>(m_exportSize) / std::max(layout.canvasWidth(), layout.canvasHeight());
     const auto segments = static_cast<std::size_t>(m_playbackPosition);
+    const std::vector<sa::ColorStep> steps = m_resultColorSteps;
+    const sa::ProjectData run = m_runSettings;
 
     m_exporting = true;
     emit stateChanged();
     setStatus(tr("Rendering frame %1...").arg(m_playbackPosition));
-    QtConcurrent::run([path, layout, sequence, style, scale, segments] {
+    QtConcurrent::run([path, layout, sequence, steps, run, style, scale, segments] {
         QString error;
-        sa::ExportManager::writePng(path, sa::ThreadRenderer::render(layout, sequence, style, scale, segments), &error);
+        const QImage image = steps.empty() ? sa::ThreadRenderer::render(layout, sequence, style, scale, segments)
+                                           : sa::ColorRenderer::render(layout, steps, run.palette, run.colorBackground,
+                                                                       style.threadWidth, style.opacity, scale,
+                                                                       segments);
+        sa::ExportManager::writePng(path, image, &error);
         return error;
     }).then(this, [this, path](const QString &error) {
         m_exporting = false;
@@ -692,12 +838,9 @@ void ProjectController::clearResult()
     m_virtualError = 0.0;
     m_store->set(QStringLiteral("virtual"), QImage());
     emit virtualChanged();
-    stopPlayback();
-    m_playback.reset();
+    resetResultState();
     m_playbackPosition = 0;
     emit playbackChanged();
-    m_resultSequence.clear();
-    m_resultTransmittance.clear();
     m_resultLayout.reset();
     m_resultTarget.clear();
     m_resultWeights.clear();
@@ -725,13 +868,18 @@ void ProjectController::exportPng(const QUrl &url)
     style.threadWidth = m_runSettings.config.threadWidth;
     style.opacity = m_runSettings.config.threadOpacity;
     const double scale = static_cast<double>(m_exportSize) / std::max(layout.canvasWidth(), layout.canvasHeight());
+    const std::vector<sa::ColorStep> steps = m_resultColorSteps;
+    const sa::ProjectData run = m_runSettings;
 
     m_exporting = true;
     emit stateChanged();
     setStatus(tr("Rendering %1 px PNG...").arg(m_exportSize));
-    QtConcurrent::run([path, layout, sequence, style, scale] {
+    QtConcurrent::run([path, layout, sequence, steps, run, style, scale] {
         QString error;
-        sa::ExportManager::writePng(path, sa::ThreadRenderer::render(layout, sequence, style, scale), &error);
+        const QImage image = steps.empty() ? sa::ThreadRenderer::render(layout, sequence, style, scale)
+                                           : sa::ColorRenderer::render(layout, steps, run.palette, run.colorBackground,
+                                                                       style.threadWidth, style.opacity, scale);
+        sa::ExportManager::writePng(path, image, &error);
         return error;
     }).then(this, [this, path](const QString &error) {
         m_exporting = false;
@@ -746,11 +894,16 @@ void ProjectController::exportCsv(const QUrl &url)
         return;
     const QString path = localPath(url);
     QString error;
-    const bool ok = sa::ExportManager::writeCsv(path, *m_resultLayout, m_resultSequence,
-                                                m_csvMillimeters ? sa::LengthUnit::Millimeters
-                                                                 : sa::LengthUnit::Pixels,
-                                                &error);
-    setStatus(ok ? tr("Saved %1 (%2 segments).").arg(path).arg(m_resultSequence.size() - 1)
+    const sa::LengthUnit unit = m_csvMillimeters ? sa::LengthUnit::Millimeters : sa::LengthUnit::Pixels;
+    const bool ok =
+        resultIsColor()
+            ? sa::ExportManager::writeText(path,
+                                           sa::ExportManager::colorCsvText(*m_resultLayout, m_resultColorSteps,
+                                                                           m_runSettings.palette, unit)
+                                               .toUtf8(),
+                                           &error)
+            : sa::ExportManager::writeCsv(path, *m_resultLayout, m_resultSequence, unit, &error);
+    setStatus(ok ? tr("Saved %1 (%2 segments).").arg(path).arg(resultSegments())
                  : tr("CSV export failed: %1").arg(error));
 }
 
@@ -763,7 +916,16 @@ void ProjectController::exportSvg(const QUrl &url)
     style.threadWidth = m_runSettings.config.threadWidth;
     style.opacity = m_runSettings.config.threadOpacity;
     QString error;
-    const bool ok = sa::ExportManager::writeSvg(path, *m_resultLayout, m_resultSequence, style, true, &error);
+    const bool ok =
+        resultIsColor()
+            ? sa::ExportManager::writeText(path,
+                                           sa::ExportManager::colorSvgText(*m_resultLayout, m_resultColorSteps,
+                                                                           m_runSettings.palette,
+                                                                           m_runSettings.colorBackground,
+                                                                           style.threadWidth, style.opacity, true)
+                                               .toUtf8(),
+                                           &error)
+            : sa::ExportManager::writeSvg(path, *m_resultLayout, m_resultSequence, style, true, &error);
     setStatus(ok ? tr("Saved %1.").arg(path) : tr("SVG export failed: %1").arg(error));
 }
 
@@ -845,7 +1007,7 @@ bool ProjectController::openProject(const QUrl &url)
         setImage(std::move(image), std::move(bytes), project.imagePath);
     }
 
-    if (project.sequence.size() > 1) {
+    if (project.sequence.size() > 1 || !project.colorSteps.empty()) {
         const sa::PinLayout layout = sa::PinLayout::fromFrame(project.frame, project.workingSize);
         m_runSettings = project;
         m_runSettings.imageData.clear();
@@ -855,8 +1017,11 @@ bool ProjectController::openProject(const QUrl &url)
                 sa::OptimizationProblem::fromImage(m_processed, layout, project.edgeEmphasis);
             m_resultTarget = problem.target;
             m_resultWeights = problem.weights;
+            if (!m_processedRgb.isNull())
+                m_resultColorTarget = m_processedRgb.channels;
         }
-        m_segments = static_cast<int>(project.sequence.size()) - 1;
+        m_segments = project.colorSteps.empty() ? static_cast<int>(project.sequence.size()) - 1
+                                                : static_cast<int>(project.colorSteps.size());
         m_runMaxSegments = project.config.maxSegments;
         m_error = project.finalError;
         m_initialError = project.initialError;
@@ -864,9 +1029,12 @@ bool ProjectController::openProject(const QUrl &url)
         m_elapsedSeconds = project.elapsedSeconds;
         m_stopReason = project.stopReason;
         emit progressChanged();
-        setResult(project.sequence, sa::ThreadRenderer::renderTransmittance(layout, project.sequence,
-                                                                            project.config.threadWidth,
-                                                                            project.config.threadOpacity));
+        if (!project.colorSteps.empty())
+            setColorResult(project.colorSteps);
+        else
+            setResult(project.sequence, sa::ThreadRenderer::renderTransmittance(layout, project.sequence,
+                                                                                project.config.threadWidth,
+                                                                                project.config.threadOpacity));
     }
     setStatus(tr("Opened %1.").arg(QFileInfo(path).fileName()) + imageNote);
     return true;

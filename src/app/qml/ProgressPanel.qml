@@ -56,7 +56,7 @@ Pane {
 
         Button {
             text: qsTr("Refine sequence")
-            enabled: root.controller.hasResult && !root.controller.running
+            enabled: root.controller.hasResult && !root.controller.running && !root.controller.resultIsColor
             Layout.fillWidth: true
             onClicked: root.controller.refineSequence()
             ToolTip.visible: hovered
@@ -67,6 +67,7 @@ Pane {
         Button {
             text: root.controller.computingVirtual ? qsTr("Computing…") : qsTr("Virtual reconstruction (LS)")
             enabled: root.controller.hasResult && !root.controller.running && !root.controller.computingVirtual
+                     && !root.controller.resultIsColor
             flat: true
             Layout.fillWidth: true
             onClicked: root.controller.computeVirtual()
@@ -130,7 +131,9 @@ Pane {
             wrapMode: Text.WordWrap
             opacity: 0.6
             font.pixelSize: 11
-            text: qsTr("The result is a single continuous thread: every segment starts at the previous segment's end pin.")
+            text: root.controller.resultIsColor
+                  ? qsTr("Each colour is one continuous thread; the winding order switches between spools.")
+                  : qsTr("The result is a single continuous thread: every segment starts at the previous segment's end pin.")
         }
 
         MenuSeparator { Layout.fillWidth: true }

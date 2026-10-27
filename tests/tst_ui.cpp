@@ -5,6 +5,7 @@
 
 #include <QElapsedTimer>
 #include <QFile>
+#include <QPainter>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QQuickItem>
@@ -42,6 +43,7 @@ private slots:
     void playbackWorkflow();
     void refineWorkflow();
     void virtualReconstruction();
+    void colourWorkflow();
 
 private:
     void createUi();
@@ -506,6 +508,81 @@ void TestUi::virtualReconstruction()
     m_controller->refineSequence();
     QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
     QVERIFY(!m_controller->hasVirtual());
+}
+
+void TestUi::colourWorkflow()
+{
+    // A colourful test picture: red left half, blue right half, black disk.
+    QImage picture(400, 400, QImage::Format_RGB32);
+    picture.fill(Qt::white);
+    {
+        QPainter p(&picture);
+        p.fillRect(QRect(0, 0, 200, 400), QColor(210, 40, 40));
+        p.fillRect(QRect(200, 0, 200, 400), QColor(40, 60, 210));
+        p.setBrush(Qt::black);
+        p.drawEllipse(QRect(150, 150, 100, 100));
+    }
+    const QString picturePath = m_dir.filePath(QStringLiteral("colour.png"));
+    QVERIFY(picture.save(picturePath));
+    QVERIFY(m_controller->loadImage(QUrl::fromLocalFile(picturePath)));
+
+    m_controller->setProperty("colorMode", true);
+    m_controller->setPalette({QColor(210, 40, 40), QColor(40, 60, 210), QColor(Qt::black)}, Qt::white);
+    QCOMPARE(m_controller->palette().size(), 3);
+    m_controller->setProperty("pinCount", 150);
+    m_controller->setProperty("maxSegments", 1500);
+    // The processed view shows colour once the debounce fires.
+    QTRY_VERIFY(m_store->get(QStringLiteral("processed")).pixelColor(60, 256).red() > 150);
+
+    m_controller->start();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 120000);
+    QVERIFY2(m_controller->resultIsColor(), qPrintable(m_controller->statusText()));
+    QVERIFY(m_controller->resultSegments() > 100);
+    QVERIFY(m_controller->error() < m_controller->initialError());
+    const QImage result = m_store->get(QStringLiteral("result"));
+    QVERIFY(result.pixelColor(110, 256).red() > result.pixelColor(110, 256).blue());
+    QVERIFY(result.pixelColor(400, 256).blue() > result.pixelColor(400, 256).red());
+
+    // Playback of colour steps.
+    m_controller->setPlaybackPosition(5);
+    QVERIFY(m_controller->palette().contains(QVariant::fromValue(m_controller->currentThreadColor())));
+    m_controller->setPlaybackPosition(m_controller->resultSegments());
+
+    // Colour exports and project round trip.
+    const QString csv = m_dir.filePath(QStringLiteral("colour.csv"));
+    const QString svg = m_dir.filePath(QStringLiteral("colour.svg"));
+    const QString project = m_dir.filePath(QStringLiteral("colour.sasproj"));
+    m_controller->exportCsv(QUrl::fromLocalFile(csv));
+    m_controller->exportSvg(QUrl::fromLocalFile(svg));
+    QFile csvFile(csv);
+    QVERIFY(csvFile.open(QIODevice::ReadOnly));
+    const QList<QByteArray> lines = csvFile.readAll().trimmed().split('\n');
+    QVERIFY(lines.first().startsWith("step,color,color_hex"));
+    QCOMPARE(lines.size(), m_controller->resultSegments() + 1);
+    QFile svgFile(svg);
+    QVERIFY(svgFile.open(QIODevice::ReadOnly));
+    QCOMPARE(svgFile.readAll().count("<line "), m_controller->resultSegments());
+    const QString png = m_dir.filePath(QStringLiteral("colour.png.out.png"));
+    m_controller->setProperty("exportSize", 1024);
+    m_controller->exportPng(QUrl::fromLocalFile(png));
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->exporting(), 30000);
+    QVERIFY(QImage(png).pixelColor(220, 512).red() > QImage(png).pixelColor(220, 512).blue());
+
+    const int segments = m_controller->resultSegments();
+    QVERIFY(m_controller->saveProject(QUrl::fromLocalFile(project)));
+    m_controller->setProperty("colorMode", false);
+    QVERIFY(m_controller->loadImage(m_portrait));
+    QVERIFY(m_controller->openProject(QUrl::fromLocalFile(project)));
+    QVERIFY(m_controller->property("colorMode").toBool());
+    QVERIFY(m_controller->resultIsColor());
+    QCOMPARE(m_controller->resultSegments(), segments);
+
+    findItem(QStringLiteral("categoryTabs"))->setProperty("currentIndex", 2);
+    findItem(QStringLiteral("viewTabs"))->setProperty("currentIndex", 2);
+    QTest::qWait(300);
+    const QByteArray shot = qgetenv("STRINGART_UI_COLOR");
+    if (!shot.isEmpty())
+        QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(shot)));
 }
 
 QTEST_MAIN(TestUi)

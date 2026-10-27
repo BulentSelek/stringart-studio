@@ -63,6 +63,12 @@ private:
     Q_PROPERTY(int refinePasses MEMBER m_refinePasses NOTIFY settingsChanged)
     Q_PROPERTY(int refineNeighborhood MEMBER m_refineNeighborhood NOTIFY settingsChanged)
     Q_PROPERTY(double edgeEmphasis MEMBER m_edgeEmphasis NOTIFY settingsChanged)
+    // Multi-colour mode: palette colours are optimized, not just displayed.
+    Q_PROPERTY(bool colorMode MEMBER m_colorMode NOTIFY colorModeChanged)
+    Q_PROPERTY(QVariantList palette READ palette NOTIFY paletteChanged)
+    Q_PROPERTY(QColor colorBackground MEMBER m_colorBackground NOTIFY paletteChanged)
+    Q_PROPERTY(bool resultIsColor READ resultIsColor NOTIFY stateChanged)
+    Q_PROPERTY(QColor currentThreadColor READ currentThreadColor NOTIFY playbackChanged)
     Q_PROPERTY(QColor threadColor MEMBER m_threadColor NOTIFY renderStyleChanged)
     Q_PROPERTY(QColor backgroundColor MEMBER m_backgroundColor NOTIFY renderStyleChanged)
 
@@ -124,6 +130,10 @@ public:
     Q_INVOKABLE bool importPins(const QUrl &url);
     Q_INVOKABLE void rotateBy(double degrees);
     Q_INVOKABLE void resetCrop();
+    Q_INVOKABLE void addPaletteColor(const QColor &color);
+    Q_INVOKABLE void removePaletteColor(int index);
+    Q_INVOKABLE void setPaletteColor(int index, const QColor &color);
+    Q_INVOKABLE void setPalette(const QVariantList &colors, const QColor &background);
     Q_INVOKABLE void fitWholeImage();
     Q_INVOKABLE void start();
     // Algorithm C on the current result (continuous thread preserved).
@@ -156,7 +166,10 @@ public:
     [[nodiscard]] QVariantList pinPositions() const;
     [[nodiscard]] QRectF effectiveCrop() const;
     [[nodiscard]] bool hasImage() const { return !m_source.isNull(); }
-    [[nodiscard]] bool hasResult() const { return m_resultSequence.size() > 1; }
+    [[nodiscard]] bool hasResult() const { return m_resultSequence.size() > 1 || !m_resultColorSteps.empty(); }
+    [[nodiscard]] bool resultIsColor() const { return !m_resultColorSteps.empty(); }
+    [[nodiscard]] QVariantList palette() const;
+    [[nodiscard]] QColor currentThreadColor() const;
     [[nodiscard]] bool running() const { return m_running; }
     [[nodiscard]] bool paused() const { return m_paused; }
     [[nodiscard]] bool exporting() const { return m_exporting; }
@@ -177,7 +190,12 @@ public:
     [[nodiscard]] double virtualError() const { return m_virtualError; }
     [[nodiscard]] int virtualLines() const { return m_virtualLines; }
     [[nodiscard]] int virtualRevision() const { return m_virtualRevision; }
-    [[nodiscard]] int resultSegments() const { return hasResult() ? static_cast<int>(m_resultSequence.size()) - 1 : 0; }
+    [[nodiscard]] int resultSegments() const
+    {
+        if (resultIsColor())
+            return static_cast<int>(m_resultColorSteps.size());
+        return m_resultSequence.size() > 1 ? static_cast<int>(m_resultSequence.size()) - 1 : 0;
+    }
     [[nodiscard]] int playbackPosition() const { return m_playbackPosition; }
     void setPlaybackPosition(int position);
     [[nodiscard]] bool playing() const { return m_playTimer.isActive(); }
@@ -199,10 +217,14 @@ signals:
     void progressChanged();
     void playbackChanged();
     void virtualChanged();
+    void colorModeChanged();
+    void paletteChanged();
     void playbackSpeedChanged();
 
 private:
     void setResult(std::vector<int> sequence, std::vector<float> transmittance);
+    void setColorResult(std::vector<sa::ColorStep> steps);
+    void resetResultState();
     void advancePlayback();
     [[nodiscard]] sa::FrameSpec frameSpec() const;
     [[nodiscard]] std::optional<sa::PinLayout> currentLayout() const;
@@ -245,6 +267,9 @@ private:
     bool m_refining = false;
     double m_refineStartError = 0.0;
     double m_edgeEmphasis = 0.0;
+    bool m_colorMode = false;
+    std::vector<QColor> m_palette{Qt::black, QColor(0xb0, 0x3a, 0x2e), QColor(0x1f, 0x4e, 0x8c)};
+    QColor m_colorBackground = Qt::white;
     QColor m_threadColor = Qt::black;
     QColor m_backgroundColor = Qt::white;
     double m_brightness = 0.0;
@@ -266,6 +291,8 @@ private:
     QString m_imageName;
     sa::GrayImage m_base;
     sa::GrayImage m_processed;
+    sa::RgbImage m_baseRgb;      // colour mode only
+    sa::RgbImage m_processedRgb; // colour mode only
     QVariantList m_histogram;
 
     bool m_running = false;
@@ -291,6 +318,9 @@ private:
     std::vector<float> m_resultWeights;
     std::vector<int> m_resultSequence;
     std::vector<float> m_resultTransmittance;
+    std::vector<sa::ColorStep> m_resultColorSteps;          // multi-colour result
+    std::array<std::vector<float>, 3> m_resultColorTarget; // for the colour residual map
+    std::unique_ptr<sa::ColorPlaybackRenderer> m_colorPlayback;
 
     bool m_computingVirtual = false;
     double m_virtualError = 0.0;

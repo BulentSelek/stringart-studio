@@ -47,7 +47,9 @@ hover (?):
    size, pin count, minimum separation; *Advanced*: start pin. The
    *Processed* view shows the frame outline.
 3. **Thread** — opacity, width (with the equivalent physical thread
-   diameter) and colours.
+   diameter) and colours. *Multi-colour threads* turns the palette (presets,
+   add / edit / remove up to 8 colours, board colour) into part of the
+   optimization; each colour becomes its own continuous thread.
 4. **Run** — working size, max. segments, edge emphasis; *Advanced*: max.
    thread length, repeated lines, refinement passes and reach.
 
@@ -80,6 +82,8 @@ honoured.
     --png out.png --png-size 2048 --csv out.csv
 ./build/src/cli/stringart-cli portrait.jpg --shape ellipse --width-mm 400 --height-mm 600 \
     --edge-emphasis 1.5 --rotate 0 --svg out.svg --json out.json
+./build/src/cli/stringart-cli portrait.jpg --colors "#000000,#7a4a2a,#c9a27a" --background "#f4ecd8" \
+    --png colour.png --csv colour.csv
 ./build/src/cli/stringart-cli --help
 ```
 

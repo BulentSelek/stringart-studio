@@ -16,6 +16,8 @@ src/
 │   ├── LineCache.*            precomputed line coverage under a memory budget
 │   ├── Compositing.*          thread compositing model + sRGB transfer
 │   ├── ThreadRenderer.*       CPU renderer (preview and high-resolution export)
+│   ├── ColorRenderer.*        multi-colour compositing and rendering
+│   ├── PlaybackRenderer.*     winding playback (single and multi-colour)
 │   ├── OptimizationConfig.*   parameters + validation
 │   ├── OptimizationProblem.*  target, weights, pins; objective definition
 │   ├── StringArtResult.*      result, progress snapshot, stop reasons
@@ -23,6 +25,7 @@ src/
 │   └── ProjectFile.*          JSON project format, custom pin CSV import
 ├── algorithms/
 │   ├── IOptimizer.h           common optimizer interface
+│   ├── ColorGreedyOptimizer.* multi-colour greedy
 │   ├── GreedyOptimizer.*      Algorithm A
 │   ├── LeastSquaresOptimizer.* Algorithm B (virtual)
 │   └── SequenceOptimizer.*    Algorithm C
@@ -187,6 +190,31 @@ candidate.
 
 The output is always a single continuous thread: segment `i` joins
 `sequence[i]` and `sequence[i+1]`.
+
+## Multi-colour threads
+
+In multi-colour mode the palette (1–8 colours) and the board colour are part
+of the optimization. Compositing ("over", linear RGB): a thread of colour `k`
+covering a fraction `β = a·c` of a pixel shows its own colour there,
+`C' = C·(1 − β) + k·β`, starting from the board colour. For one colour this
+equals the single-colour model; with several colours the order matters
+(later threads lie on top), so the result is a **global winding order** of
+steps `(colour, from pin, to pin)` in which each colour forms one continuous
+thread from the start pin. Winding follows the step order, switching spools
+when the colour changes; each thread stays attached at its current pin.
+Light threads can brighten a dark board (e.g. white on grey).
+
+`ColorGreedyOptimizer` scores every valid line from every colour's current
+pin exactly over the line's pixels against the display-encoded RGB target
+(objective `Σ w Σ_c (enc(C_c) − g_c)²`, reported as a per-channel weighted
+MSE), with deterministic ties (colour, then pin). Tests: identical to the
+single-colour optimizer for one black thread, identical to a brute-force
+re-render search, per-colour continuity, and colour placement on a two-colour
+image. Exports: CSV with `color` / `color_hex` columns and per-colour
+cumulative length, SVG with one stroke colour per line, project/JSON with
+`color.palette` and `result.steps` (continuity is validated on load).
+Sequence refinement and the virtual least-squares reconstruction are
+single-colour only.
 
 ## Winding playback
 

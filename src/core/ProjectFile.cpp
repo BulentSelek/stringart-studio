@@ -150,18 +150,36 @@ QByteArray ProjectFile::toJson(const ProjectData &project, bool embedImage, bool
                      {QStringLiteral("backgroundColor"), project.backgroundColor.name()}}},
     };
 
-    if (!project.sequence.empty()) {
-        QJsonArray sequence;
-        for (int pin : project.sequence)
-            sequence.append(pin);
-        root.insert(QStringLiteral("result"),
-                    QJsonObject{{QStringLiteral("sequence"), sequence},
-                                {QStringLiteral("segments"), static_cast<int>(project.sequence.size()) - 1},
-                                {QStringLiteral("stopReason"), project.stopReason},
-                                {QStringLiteral("initialError"), project.initialError},
-                                {QStringLiteral("finalError"), project.finalError},
-                                {QStringLiteral("threadLengthMm"), project.threadLengthMm},
-                                {QStringLiteral("elapsedSeconds"), project.elapsedSeconds}});
+    if (project.colorMode || !project.palette.empty()) {
+        QJsonArray palette;
+        for (const QColor &c : project.palette)
+            palette.append(c.name());
+        root.insert(QStringLiteral("color"), QJsonObject{{QStringLiteral("enabled"), project.colorMode},
+                                                         {QStringLiteral("palette"), palette},
+                                                         {QStringLiteral("background"),
+                                                          project.colorBackground.name()}});
+    }
+
+    if (!project.sequence.empty() || !project.colorSteps.empty()) {
+        QJsonObject result{{QStringLiteral("stopReason"), project.stopReason},
+                           {QStringLiteral("initialError"), project.initialError},
+                           {QStringLiteral("finalError"), project.finalError},
+                           {QStringLiteral("threadLengthMm"), project.threadLengthMm},
+                           {QStringLiteral("elapsedSeconds"), project.elapsedSeconds}};
+        if (!project.colorSteps.empty()) {
+            QJsonArray steps;
+            for (const ColorStep &step : project.colorSteps)
+                steps.append(QJsonArray{step.color, step.from, step.to});
+            result.insert(QStringLiteral("steps"), steps);
+            result.insert(QStringLiteral("segments"), static_cast<int>(project.colorSteps.size()));
+        } else {
+            QJsonArray sequence;
+            for (int pin : project.sequence)
+                sequence.append(pin);
+            result.insert(QStringLiteral("sequence"), sequence);
+            result.insert(QStringLiteral("segments"), static_cast<int>(project.sequence.size()) - 1);
+        }
+        root.insert(QStringLiteral("result"), result);
     }
 
     if (includePins) {
@@ -246,6 +264,20 @@ ProjectData ProjectFile::fromJson(const QByteArray &json)
     project.threadColor = color(render, QStringLiteral("threadColor"), project.threadColor);
     project.backgroundColor = color(render, QStringLiteral("backgroundColor"), project.backgroundColor);
 
+    if (root.contains(QStringLiteral("color"))) {
+        const QJsonObject colorMode = root.value(QStringLiteral("color")).toObject();
+        project.colorMode = boolean(colorMode, QStringLiteral("enabled"), false);
+        project.colorBackground = color(colorMode, QStringLiteral("background"), project.colorBackground);
+        for (const QJsonValue &v : colorMode.value(QStringLiteral("palette")).toArray()) {
+            const QColor c = QColor::fromString(v.toString());
+            if (!c.isValid())
+                fail(QStringLiteral("palette contains an invalid colour"));
+            project.palette.push_back(c);
+        }
+        if (project.palette.size() > 8 || (project.colorMode && project.palette.empty()))
+            fail(QStringLiteral("the palette must contain 1 to 8 colours"));
+    }
+
     // Validate the frame and parameters against each other.
     int pinCount = 0;
     try {
@@ -259,6 +291,24 @@ ProjectData ProjectFile::fromJson(const QByteArray &json)
 
     if (root.contains(QStringLiteral("result"))) {
         const QJsonObject result = root.value(QStringLiteral("result")).toObject();
+        // Colour steps: [colour, from, to]; every colour must form one continuous
+        // thread that starts at the start pin.
+        std::vector<int> current(project.palette.size(), project.config.startPin);
+        for (const QJsonValue &v : result.value(QStringLiteral("steps")).toArray()) {
+            const QJsonArray step = v.toArray();
+            if (step.size() != 3)
+                fail(QStringLiteral("result steps must be [colour, from, to]"));
+            const int c = step[0].toInt(-1);
+            const int from = step[1].toInt(-1);
+            const int to = step[2].toInt(-1);
+            if (c < 0 || c >= static_cast<int>(project.palette.size()) || from < 0 || from >= pinCount || to < 0
+                || to >= pinCount)
+                fail(QStringLiteral("result steps reference an invalid colour or pin"));
+            if (current[static_cast<std::size_t>(c)] != from)
+                fail(QStringLiteral("result steps do not form continuous threads"));
+            current[static_cast<std::size_t>(c)] = to;
+            project.colorSteps.push_back({c, from, to});
+        }
         for (const QJsonValue &v : result.value(QStringLiteral("sequence")).toArray()) {
             const double pin = v.toDouble(-1.0);
             if (!v.isDouble() || pin != std::floor(pin) || pin < 0 || pin >= pinCount)

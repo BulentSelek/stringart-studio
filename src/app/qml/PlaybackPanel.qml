@@ -49,6 +49,14 @@ Pane {
                     root.viewRequested()
                 }
             }
+            Rectangle {
+                visible: root.controller.resultIsColor && root.controller.currentFromPin >= 0
+                implicitWidth: 14
+                implicitHeight: 14
+                radius: 7
+                color: root.controller.currentThreadColor
+                border.color: "#80ffffff"
+            }
             Label {
                 text: (root.controller.currentFromPin >= 0
                        ? qsTr("pin %1 → %2").arg(root.controller.currentFromPin).arg(root.controller.currentToPin)

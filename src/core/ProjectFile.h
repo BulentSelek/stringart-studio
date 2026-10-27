@@ -3,6 +3,7 @@
 #include "core/ImageProcessor.h"
 #include "core/OptimizationConfig.h"
 #include "core/PinGeometry.h"
+#include "core/StringArtResult.h"
 
 #include <QByteArray>
 #include <QColor>
@@ -32,7 +33,13 @@ struct ProjectData
     QColor threadColor = Qt::black;
     QColor backgroundColor = Qt::white;
 
-    std::vector<int> sequence;  // empty = no result
+    // Multi-colour mode: one continuous thread per palette colour.
+    bool colorMode = false;
+    std::vector<QColor> palette;
+    QColor colorBackground = Qt::white;
+
+    std::vector<int> sequence;           // single-colour result; empty = no result
+    std::vector<ColorStep> colorSteps;   // multi-colour result in global winding order
     QString stopReason;
     double initialError = 0.0;
     double finalError = 0.0;

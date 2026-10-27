@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
+import QtQuick.Dialogs
 import QtQuick.Layouts
 
 import StringArtStudio
@@ -74,6 +75,7 @@ Pane {
         property string help
         property alias model: box.model
         property alias currentIndex: box.currentIndex
+        property alias displayText: box.displayText
         signal activated(int index)
         Layout.fillWidth: true
 
@@ -374,8 +376,20 @@ Pane {
                 }
 
                 SectionLabel { text: qsTr("Colours") }
+                Switch {
+                    text: qsTr("Multi-colour threads")
+                    checked: root.controller.colorMode
+                    enabled: !root.controller.running
+                    onToggled: root.controller.colorMode = checked
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 300
+                    ToolTip.text: qsTr("Optimize several coloured threads at once; each colour is its own continuous thread.")
+                }
+
+                // Single colour: colours only change the preview.
                 ComboField {
                     id: palette
+                    visible: !root.controller.colorMode
                     readonly property var palettes: [
                         { name: qsTr("Black on white"), thread: "#000000", background: "#ffffff" },
                         { name: qsTr("White on black"), thread: "#ffffff", background: "#000000" },
@@ -388,6 +402,111 @@ Pane {
                     onActivated: index => {
                         root.controller.threadColor = palettes[index].thread
                         root.controller.backgroundColor = palettes[index].background
+                    }
+                }
+
+                // Multi-colour: the palette is part of the optimization.
+                ColumnLayout {
+                    visible: root.controller.colorMode
+                    enabled: !root.controller.running
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    ComboField {
+                        readonly property var presets: [
+                            { name: qsTr("Black, red, blue"), colors: ["#000000", "#b03a2e", "#1f4e8c"], background: "#ffffff" },
+                            { name: qsTr("Black and white on grey"), colors: ["#000000", "#ffffff"], background: "#8a8a8a" },
+                            { name: qsTr("CMY + black"), colors: ["#00a0e0", "#e0007a", "#f0d000", "#000000"], background: "#ffffff" },
+                            { name: qsTr("Warm portrait on cream"), colors: ["#000000", "#7a4a2a", "#c9a27a"], background: "#f4ecd8" }
+                        ]
+                        label: qsTr("Preset")
+                        help: qsTr("Starting palettes; edit the colours below.")
+                        model: presets.map(p => p.name)
+                        currentIndex: -1
+                        displayText: qsTr("Choose…")
+                        onActivated: index => root.controller.setPalette(presets[index].colors, presets[index].background)
+                    }
+
+                    Repeater {
+                        model: root.controller.palette
+                        delegate: RowLayout {
+                            id: paletteRow
+                            required property int index
+                            required property color modelData
+                            Layout.fillWidth: true
+
+                            Rectangle {
+                                implicitWidth: 28
+                                implicitHeight: 20
+                                radius: 3
+                                color: paletteRow.modelData
+                                border.color: "#80ffffff"
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: colorDialog.edit(paletteRow.index, paletteRow.modelData)
+                                }
+                            }
+                            Label {
+                                text: qsTr("Thread %1  %2").arg(paletteRow.index + 1).arg(String(paletteRow.modelData))
+                                font.family: "monospace"
+                                Layout.fillWidth: true
+                            }
+                            ToolButton {
+                                text: "✕"
+                                enabled: root.controller.palette.length > 1
+                                onClicked: root.controller.removePaletteColor(paletteRow.index)
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Remove colour")
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Button {
+                            text: qsTr("Add colour…")
+                            flat: true
+                            enabled: root.controller.palette.length < 8
+                            onClicked: colorDialog.edit(-1, "#808080")
+                        }
+                        Item { Layout.fillWidth: true }
+                        HelpLabel {
+                            text: qsTr("Background")
+                            help: qsTr("Colour of the board behind the threads.")
+                        }
+                        Rectangle {
+                            implicitWidth: 28
+                            implicitHeight: 20
+                            radius: 3
+                            color: root.controller.colorBackground
+                            border.color: "#80ffffff"
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: colorDialog.edit(-2, root.controller.colorBackground)
+                            }
+                        }
+                    }
+                    Hint { text: qsTr("Each colour is a separate continuous thread. The winding CSV lists all steps in order; switch spools when the colour changes. Refine and the virtual reconstruction are single-colour only.") }
+                }
+
+                ColorDialog {
+                    id: colorDialog
+                    // -1 = add a colour, -2 = background, >= 0 = palette index
+                    property int target: -1
+                    function edit(index, current) {
+                        target = index
+                        selectedColor = current
+                        open()
+                    }
+                    onAccepted: {
+                        if (target === -2)
+                            root.controller.colorBackground = selectedColor
+                        else if (target === -1)
+                            root.controller.addPaletteColor(selectedColor)
+                        else
+                            root.controller.setPaletteColor(target, selectedColor)
                     }
                 }
             }

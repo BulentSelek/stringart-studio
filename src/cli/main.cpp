@@ -1,3 +1,4 @@
+#include "algorithms/ColorGreedyOptimizer.h"
 #include "algorithms/GreedyOptimizer.h"
 #include "algorithms/SequenceOptimizer.h"
 #include "core/ExportManager.h"
@@ -14,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <memory>
 
 namespace {
 
@@ -68,6 +70,8 @@ int main(int argc, char *argv[])
         {QStringLiteral("height-mm"), QStringLiteral("Frame height in mm (ellipse, rectangle)."), QStringLiteral("mm"), QStringLiteral("500")},
         {QStringLiteral("pins-csv"), QStringLiteral("Custom pin positions (x, y in mm); implies --shape custom."), QStringLiteral("path")},
         {QStringLiteral("rotate"), QStringLiteral("Rotate the input clockwise by degrees."), QStringLiteral("deg"), QStringLiteral("0")},
+        {QStringLiteral("colors"), QStringLiteral("Multi-colour mode: comma-separated thread colours, e.g. #000000,#b03a2e."), QStringLiteral("list")},
+        {QStringLiteral("background"), QStringLiteral("Board colour for multi-colour mode."), QStringLiteral("color"), QStringLiteral("#ffffff")},
         {QStringLiteral("refine-passes"), QStringLiteral("Sequence refinement passes after greedy (0 = off)."), QStringLiteral("n"), QStringLiteral("0")},
         {QStringLiteral("refine-neighborhood"), QStringLiteral("Refinement candidates within +-n pins (0 = all)."), QStringLiteral("n"), QStringLiteral("20")},
         {QStringLiteral("edge-emphasis"), QStringLiteral("Extra error weight on edges (0 = plain MSE)."), QStringLiteral("k"), QStringLiteral("0")},
@@ -149,9 +153,29 @@ int main(int argc, char *argv[])
 
         const bool quiet = parser.isSet(QStringLiteral("quiet"));
         int lastReported = -1;
-        sa::GreedyOptimizer optimizer;
+        // Multi-colour mode: palette from --colors, RGB target from the same preprocessing.
+        std::vector<QColor> palette;
+        for (const QString &name : parser.value(QStringLiteral("colors")).split(u',', Qt::SkipEmptyParts)) {
+            const QColor c = QColor::fromString(name.trimmed());
+            if (!c.isValid())
+                fail(QStringLiteral("invalid colour \"%1\" in --colors").arg(name));
+            palette.push_back(c);
+        }
+        const QColor background = QColor::fromString(parser.value(QStringLiteral("background")));
+        if (!background.isValid())
+            fail(QStringLiteral("invalid --background colour"));
+        const bool colorMode = !palette.empty();
+        std::unique_ptr<sa::IOptimizer> optimizer;
+        if (colorMode) {
+            const sa::RgbImage rgb = sa::ImageProcessor::applyTone(
+                sa::ImageProcessor::prepareBaseRgb(original, pins.canvasWidth(), pins.canvasHeight(), {}, rotation),
+                tone);
+            optimizer = std::make_unique<sa::ColorGreedyOptimizer>(rgb.channels, palette, background);
+        } else {
+            optimizer = std::make_unique<sa::GreedyOptimizer>();
+        }
         sa::StringArtResult result =
-            optimizer.optimize(problem, config, {}, [&](const sa::OptimizationProgress &p) {
+            optimizer->optimize(problem, config, {}, [&](const sa::OptimizationProgress &p) {
                 if (quiet || p.segments == lastReported || (p.segments % 250 != 0 && p.segments != p.maxSegments))
                     return;
                 lastReported = p.segments;
@@ -162,6 +186,8 @@ int main(int argc, char *argv[])
             std::fprintf(stderr, "\n");
 
         const int refinePasses = intOption(parser, QStringLiteral("refine-passes"));
+        if (refinePasses > 0 && colorMode)
+            fail(QStringLiteral("--refine-passes is available for single-colour runs only"));
         if (refinePasses > 0) {
             const double greedyError = result.finalError;
             const double greedySeconds = result.elapsedSeconds;
@@ -192,8 +218,10 @@ int main(int argc, char *argv[])
             const double scale = static_cast<double>(intOption(parser, QStringLiteral("png-size"))) / size;
             // --png-size is the long side, like --size.
             QString error;
-            if (!sa::ExportManager::writePng(parser.value(QStringLiteral("png")),
-                                             sa::ThreadRenderer::render(pins, result.sequence, style, scale), &error))
+            const QImage image = colorMode ? sa::ColorRenderer::render(pins, result.colorSteps, palette, background,
+                                                                       config.threadWidth, config.threadOpacity, scale)
+                                           : sa::ThreadRenderer::render(pins, result.sequence, style, scale);
+            if (!sa::ExportManager::writePng(parser.value(QStringLiteral("png")), image, &error))
                 fail(QStringLiteral("PNG export failed: %1").arg(error));
         }
         if (parser.isSet(QStringLiteral("csv"))) {
@@ -201,9 +229,15 @@ int main(int argc, char *argv[])
             if (units != u"mm" && units != u"px")
                 fail(QStringLiteral("--csv-units must be mm or px"));
             QString error;
-            if (!sa::ExportManager::writeCsv(parser.value(QStringLiteral("csv")), pins, result.sequence,
-                                             units == u"mm" ? sa::LengthUnit::Millimeters : sa::LengthUnit::Pixels,
-                                             &error))
+            const sa::LengthUnit unit = units == u"mm" ? sa::LengthUnit::Millimeters : sa::LengthUnit::Pixels;
+            const bool ok = colorMode
+                                ? sa::ExportManager::writeText(
+                                      parser.value(QStringLiteral("csv")),
+                                      sa::ExportManager::colorCsvText(pins, result.colorSteps, palette, unit).toUtf8(),
+                                      &error)
+                                : sa::ExportManager::writeCsv(parser.value(QStringLiteral("csv")), pins,
+                                                              result.sequence, unit, &error);
+            if (!ok)
                 fail(QStringLiteral("CSV export failed: %1").arg(error));
         }
         if (parser.isSet(QStringLiteral("svg"))) {
@@ -211,8 +245,16 @@ int main(int argc, char *argv[])
             style.threadWidth = config.threadWidth;
             style.opacity = config.threadOpacity;
             QString error;
-            if (!sa::ExportManager::writeSvg(parser.value(QStringLiteral("svg")), pins, result.sequence, style, true,
-                                             &error))
+            const bool ok = colorMode
+                                ? sa::ExportManager::writeText(
+                                      parser.value(QStringLiteral("svg")),
+                                      sa::ExportManager::colorSvgText(pins, result.colorSteps, palette, background,
+                                                                      config.threadWidth, config.threadOpacity, true)
+                                          .toUtf8(),
+                                      &error)
+                                : sa::ExportManager::writeSvg(parser.value(QStringLiteral("svg")), pins,
+                                                              result.sequence, style, true, &error);
+            if (!ok)
                 fail(QStringLiteral("SVG export failed: %1").arg(error));
         }
         if (parser.isSet(QStringLiteral("json"))) {
@@ -225,6 +267,10 @@ int main(int argc, char *argv[])
             project.config = config;
             project.edgeEmphasis = edgeEmphasis;
             project.sequence = result.sequence;
+            project.colorMode = colorMode;
+            project.palette = palette;
+            project.colorBackground = background;
+            project.colorSteps = result.colorSteps;
             project.stopReason = QString::fromUtf8(sa::toString(result.stopReason));
             project.initialError = result.initialError;
             project.finalError = result.finalError;

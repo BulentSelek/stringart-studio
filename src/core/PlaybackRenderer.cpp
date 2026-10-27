@@ -60,4 +60,53 @@ std::span<const float> PlaybackRenderer::seek(int segments)
     return m_current;
 }
 
+ColorPlaybackRenderer::ColorPlaybackRenderer(PinLayout layout, std::vector<ColorStep> steps,
+                                             std::vector<QColor> palette, QColor background, double threadWidth,
+                                             float opacity, std::size_t memoryBudgetBytes)
+    : m_layout(std::move(layout)), m_steps(std::move(steps)), m_width(threadWidth), m_opacity(opacity)
+{
+    for (const QColor &c : palette)
+        m_colors.push_back(toLinearRgb(c));
+    const std::size_t pixels =
+        static_cast<std::size_t>(m_layout.canvasWidth()) * static_cast<std::size_t>(m_layout.canvasHeight());
+    const auto maxCheckpoints = std::max<std::size_t>(1, memoryBudgetBytes / std::max<std::size_t>(1, pixels * 12));
+    const int count = segmentCount();
+    m_interval = std::max(16, static_cast<int>((static_cast<std::size_t>(count) + maxCheckpoints - 1)
+                                               / maxCheckpoints));
+    const LinearRgb bg = toLinearRgb(background);
+    m_current.resize(pixels * 3);
+    for (std::size_t p = 0; p < pixels; ++p)
+        std::copy(bg.begin(), bg.end(), m_current.begin() + static_cast<std::ptrdiff_t>(3 * p));
+    m_checkpoints.push_back(m_current);
+    for (int s = 0; s < count; ++s) {
+        apply(s);
+        if ((s + 1) % m_interval == 0)
+            m_checkpoints.push_back(m_current);
+    }
+    m_position = count;
+}
+
+void ColorPlaybackRenderer::apply(int step)
+{
+    thread_local std::vector<LineSample> samples;
+    const ColorStep &s = m_steps[static_cast<std::size_t>(step)];
+    rasterizePinLine(m_layout, s.from, s.to, m_width, m_layout.canvasWidth(), m_layout.canvasHeight(), samples);
+    const LinearRgb &k = m_colors.at(static_cast<std::size_t>(s.color));
+    for (const LineSample &sample : samples)
+        applyThreadOver(&m_current[3 * static_cast<std::size_t>(sample.index)], k, m_opacity * sample.coverage);
+}
+
+std::span<const float> ColorPlaybackRenderer::seek(int steps)
+{
+    steps = std::clamp(steps, 0, segmentCount());
+    if (steps < m_position || steps - m_position > m_interval) {
+        const int k = steps / m_interval;
+        m_current = m_checkpoints[static_cast<std::size_t>(k)];
+        m_position = k * m_interval;
+    }
+    while (m_position < steps)
+        apply(m_position++);
+    return m_current;
+}
+
 } // namespace sa

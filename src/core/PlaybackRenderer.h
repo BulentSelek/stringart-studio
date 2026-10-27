@@ -1,6 +1,8 @@
 #pragma once
 
+#include "core/ColorRenderer.h"
 #include "core/PinGeometry.h"
+#include "core/StringArtResult.h"
 
 #include <cstddef>
 #include <span>
@@ -41,6 +43,36 @@ private:
     float m_opacity;
     int m_interval = 1;
     std::vector<std::vector<float>> m_checkpoints; // m_checkpoints[k] = state after k * m_interval segments
+    std::vector<float> m_current;
+    int m_position = 0;
+};
+
+// Multi-colour counterpart: replays ColorStep lists with ColorRenderer's
+// compositing (interleaved linear RGB), same checkpoint strategy.
+class ColorPlaybackRenderer
+{
+public:
+    ColorPlaybackRenderer(PinLayout layout, std::vector<ColorStep> steps, std::vector<QColor> palette,
+                          QColor background, double threadWidth, float opacity,
+                          std::size_t memoryBudgetBytes = std::size_t{96} << 20);
+
+    [[nodiscard]] int segmentCount() const noexcept { return static_cast<int>(m_steps.size()); }
+    [[nodiscard]] int position() const noexcept { return m_position; }
+    [[nodiscard]] const std::vector<ColorStep> &steps() const noexcept { return m_steps; }
+
+    // Interleaved linear RGB after `steps` steps; valid until the next call.
+    std::span<const float> seek(int steps);
+
+private:
+    void apply(int step);
+
+    PinLayout m_layout;
+    std::vector<ColorStep> m_steps;
+    std::vector<LinearRgb> m_colors;
+    double m_width;
+    float m_opacity;
+    int m_interval = 1;
+    std::vector<std::vector<float>> m_checkpoints;
     std::vector<float> m_current;
     int m_position = 0;
 };

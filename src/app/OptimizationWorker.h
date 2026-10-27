@@ -7,6 +7,10 @@
 #include "core/ThreadRenderer.h"
 
 #include <QObject>
+
+#include <array>
+#include <span>
+#include <vector>
 #include <QString>
 
 #include <condition_variable>
@@ -44,8 +48,11 @@ public:
     ~OptimizationWorker() override;
 
     // Starts a run of `optimizer`; any previous run is cancelled and joined first.
+    // `colorTarget` (encoded RGB planes) is only needed for multi-colour runs,
+    // to draw the residual map.
     void start(std::unique_ptr<sa::IOptimizer> optimizer, sa::OptimizationProblem problem,
-               sa::OptimizationConfig config, sa::RenderStyle style);
+               sa::OptimizationConfig config, sa::RenderStyle style,
+               std::array<std::vector<float>, 3> colorTarget = {});
     void pause();
     void resume();
     void cancel();
@@ -61,9 +68,13 @@ signals:
 
 private:
     void run(std::stop_token stop, sa::IOptimizer &optimizer, const sa::OptimizationProblem &problem,
-             const sa::OptimizationConfig &config, const sa::RenderStyle &style);
-    void publishPreview(const sa::OptimizationProgress &progress, const sa::RenderStyle &style,
-                        const sa::OptimizationProblem &problem);
+             const sa::OptimizationConfig &config, const sa::RenderStyle &style,
+             const std::array<std::vector<float>, 3> &colorTarget);
+    void publishProgress(const sa::OptimizationProgress &progress, const sa::RenderStyle &style,
+                         const sa::OptimizationProblem &problem, const std::array<std::vector<float>, 3> &colorTarget);
+    void publishImages(std::span<const float> transmittance, std::span<const float> rgb, int width, int height,
+                       const sa::RenderStyle &style, const sa::OptimizationProblem &problem,
+                       const std::array<std::vector<float>, 3> &colorTarget);
 
     std::shared_ptr<ImageStore> m_store;
     mutable std::mutex m_mutex;

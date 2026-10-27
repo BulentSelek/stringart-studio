@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/PinGeometry.h"
+#include "core/StringArtResult.h"
 #include "core/ThreadRenderer.h"
 
 #include <QImage>
@@ -36,6 +37,17 @@ public:
 
     static bool writeSvg(const QString &path, const PinLayout &layout, std::span<const int> sequence,
                          const RenderStyle &style, bool includePins = true, QString *errorMessage = nullptr);
+
+    // Multi-colour CSV in global winding order:
+    //   step,color,color_hex,from_pin,to_pin,from_x,from_y,to_x,to_y,length,color_cumulative_length
+    // `color` is the palette index; each colour's rows form one continuous thread.
+    [[nodiscard]] static QString colorCsvText(const PinLayout &layout, std::span<const ColorStep> steps,
+                                              std::span<const QColor> palette, LengthUnit unit);
+
+    // Multi-colour SVG: one <line> per step in winding order, coloured per thread.
+    [[nodiscard]] static QString colorSvgText(const PinLayout &layout, std::span<const ColorStep> steps,
+                                              std::span<const QColor> palette, const QColor &background,
+                                              double threadWidth, float opacity, bool includePins = true);
 
     // Writes text atomically (QSaveFile).
     static bool writeText(const QString &path, const QByteArray &data, QString *errorMessage = nullptr);
