@@ -21,6 +21,14 @@
 
 Q_IMPORT_QML_PLUGIN(StringArtStudioPlugin)
 
+// Responsiveness limit for the GUI thread during a run. Sanitizer and debug
+// builds run QML and rendering several times slower, so they get more room.
+#if defined(__SANITIZE_ADDRESS__) || !defined(NDEBUG)
+constexpr qint64 kMaxGuiGapMs = 2000;
+#else
+constexpr qint64 kMaxGuiGapMs = 250;
+#endif
+
 // End-to-end check of the Phase 1 acceptance flow through the real QML UI:
 // load a portrait, choose a pin count, optimize without blocking the GUI
 // thread, inspect, export PNG and CSV.
@@ -158,7 +166,7 @@ void TestUi::fullWorkflow()
     QVERIFY(m_controller->segments() > 500);
     QVERIFY(m_controller->error() < 0.5 * m_controller->initialError());
     QVERIFY(m_controller->threadLengthM() > 0.0);
-    QVERIFY2(maxGap < 250, qPrintable(QStringLiteral("GUI thread blocked for %1 ms").arg(maxGap)));
+    QVERIFY2(maxGap < kMaxGuiGapMs, qPrintable(QStringLiteral("GUI thread blocked for %1 ms").arg(maxGap)));
     QVERIFY(resultFrames.count() >= 1);
     qInfo("run: %d segments, %.2f s, max GUI gap %lld ms, %lld preview frames", m_controller->segments(),
           m_controller->elapsedSeconds(), maxGap, static_cast<long long>(resultFrames.count()));

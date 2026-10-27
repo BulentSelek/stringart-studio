@@ -637,7 +637,7 @@ void ProjectController::onWorkerFinished(bool success)
         }
         m_stopReason = QString::fromUtf8(sa::toString(result->stopReason));
         if (!result->colorSteps.empty())
-            setColorResult(std::move(result->colorSteps));
+            setColorResult(std::move(result->colorSteps), std::move(result->rgb));
         else
             setResult(std::move(result->sequence), std::move(result->transmittance));
         setStatus(tr("Finished: %1 segments in %2 s (%3).")
@@ -661,13 +661,13 @@ void ProjectController::resetResultState()
     m_resultColorSteps.clear();
 }
 
-void ProjectController::setColorResult(std::vector<sa::ColorStep> steps)
+void ProjectController::setColorResult(std::vector<sa::ColorStep> steps, std::vector<float> rgb)
 {
     resetResultState();
     m_resultColorSteps = std::move(steps);
     m_colorPlayback = std::make_unique<sa::ColorPlaybackRenderer>(
         *m_resultLayout, m_resultColorSteps, m_runSettings.palette, m_runSettings.colorBackground,
-        m_runSettings.config.threadWidth, m_runSettings.config.threadOpacity);
+        m_runSettings.config.threadWidth, m_runSettings.config.threadOpacity, std::move(rgb));
     m_playbackPosition = m_colorPlayback->segmentCount();
     emit stateChanged();
     emit playbackChanged();
@@ -681,7 +681,7 @@ void ProjectController::setResult(std::vector<int> sequence, std::vector<float> 
     m_resultTransmittance = std::move(transmittance);
     m_playback = std::make_unique<sa::PlaybackRenderer>(*m_resultLayout, m_resultSequence,
                                                         m_runSettings.config.threadWidth,
-                                                        m_runSettings.config.threadOpacity);
+                                                        m_runSettings.config.threadOpacity, m_resultTransmittance);
     m_playbackPosition = m_playback->segmentCount();
     emit stateChanged();
     emit playbackChanged();
@@ -1030,7 +1030,7 @@ bool ProjectController::openProject(const QUrl &url)
         m_stopReason = project.stopReason;
         emit progressChanged();
         if (!project.colorSteps.empty())
-            setColorResult(project.colorSteps);
+            setColorResult(project.colorSteps, {});
         else
             setResult(project.sequence, sa::ThreadRenderer::renderTransmittance(layout, project.sequence,
                                                                                 project.config.threadWidth,

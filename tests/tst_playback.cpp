@@ -13,6 +13,7 @@ private slots:
     void seekMatchesRenderer();
     void smallBudgetUsesSparseCheckpoints();
     void emptySequence();
+    void lazyCheckpointsFromFinalState();
 };
 
 namespace {
@@ -56,7 +57,7 @@ void TestPlayback::smallBudgetUsesSparseCheckpoints()
 {
     const PinLayout layout = PinLayout::circular(60, 64, 64);
     const std::vector<int> sequence = pseudoRandomSequence(60, 500);
-    PlaybackRenderer playback(layout, sequence, 1.0, 0.2f, 64 * 64 * sizeof(float) * 4); // 4 checkpoints
+    PlaybackRenderer playback(layout, sequence, 1.0, 0.2f, {}, 64 * 64 * sizeof(float) * 4); // 4 checkpoints
     QVERIFY(playback.checkpointInterval() >= 125);
     const auto t = playback.seek(333);
     const std::vector<float> reference = ThreadRenderer::renderTransmittance(layout, sequence, 1.0, 0.2f, 1.0, 333);
@@ -70,6 +71,23 @@ void TestPlayback::emptySequence()
     const auto t = playback.seek(5);
     QCOMPARE(t.size(), std::size_t{32 * 32});
     QVERIFY(std::all_of(t.begin(), t.end(), [](float v) { return v == 1.0f; }));
+}
+
+void TestPlayback::lazyCheckpointsFromFinalState()
+{
+    const PinLayout layout = PinLayout::circular(70, 80, 80);
+    const std::vector<int> sequence = pseudoRandomSequence(70, 250);
+    std::vector<float> final = ThreadRenderer::renderTransmittance(layout, sequence, 1.0, 0.25f);
+    PlaybackRenderer playback(layout, sequence, 1.0, 0.25f, final);
+    QCOMPARE(playback.position(), 250);
+    const auto end = playback.seek(250);
+    QVERIFY(std::equal(end.begin(), end.end(), final.begin(), final.end()));
+    for (int target : {100, 0, 249, 250}) {
+        const auto t = playback.seek(target);
+        const std::vector<float> reference =
+            ThreadRenderer::renderTransmittance(layout, sequence, 1.0, 0.25f, 1.0, static_cast<std::size_t>(target));
+        QVERIFY(std::equal(t.begin(), t.end(), reference.begin(), reference.end()));
+    }
 }
 
 QTEST_GUILESS_MAIN(TestPlayback)

@@ -1,9 +1,8 @@
 # Benchmarks
 
-Measured 2026-10-26 with `benchmarks/run_benchmarks.sh` (Release build), re-run
-after Phase 2 (the mask changed from the exact circle to the pins' convex
-hull, which shifts errors in the 5th decimal). The cache/thread scaling table
-below was measured on the Phase 1 code.
+Main table measured 2026-10-27 with `benchmarks/run_benchmarks.sh` (Release
+build) on the current code. The cache/thread scaling table below was
+measured on the Phase 1 code; the greedy core has not changed since.
 
 - CPU: Intel Core i9-13980HX (8 P-cores + 16 E-cores, 32 hardware threads)
 - RAM: 32 GB; OS: Arch Linux, kernel 7.2; GCC 16.2.1; Qt 6.12.0
@@ -17,12 +16,12 @@ below was measured on the Phase 1 code.
 
 | size | pins | segments | threads | line cache | runtime (s) | ms/segment | CPU util. | peak RAM (MiB) | initial error | final error | stop reason |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 512 | 200 | 2914 | 32 | precomputed 90 MiB | 0.52 | 0.177 | 42 % of 32 | 243 | 0.23822 | 0.03736 | no candidate improves the error |
-| 512 | 400 | 3091 | 32 | precomputed 359 MiB | 0.68 | 0.220 | 47 % of 32 | 767 | 0.23821 | 0.03337 | no candidate improves the error |
-| 512 | 800 | 3108 | 32 | on demand 0 MiB | 1.20 | 0.385 | 68 % of 32 | 45 | 0.23821 | 0.03145 | no candidate improves the error |
-| 1024 | 200 | 4000 | 32 | precomputed 180 MiB | 0.94 | 0.234 | 46 % of 32 | 457 | 0.23819 | 0.05136 | maximum segment count reached |
-| 1024 | 400 | 4000 | 32 | on demand 0 MiB | 1.70 | 0.424 | 63 % of 32 | 57 | 0.23818 | 0.04731 | maximum segment count reached |
-| 1024 | 800 | 4000 | 32 | on demand 0 MiB | 2.97 | 0.742 | 74 % of 32 | 57 | 0.23818 | 0.04590 | maximum segment count reached |
+| 512 | 200 | 2914 | 32 | precomputed 90 MiB | 0.50 | 0.172 | 47 % of 32 | 242 | 0.23822 | 0.03736 | no candidate improves the error |
+| 512 | 400 | 3091 | 32 | precomputed 359 MiB | 0.64 | 0.207 | 51 % of 32 | 770 | 0.23821 | 0.03337 | no candidate improves the error |
+| 512 | 800 | 3108 | 32 | on demand 0 MiB | 1.18 | 0.380 | 69 % of 32 | 42 | 0.23821 | 0.03145 | no candidate improves the error |
+| 1024 | 200 | 4000 | 32 | precomputed 180 MiB | 0.93 | 0.232 | 47 % of 32 | 448 | 0.23819 | 0.05136 | maximum segment count reached |
+| 1024 | 400 | 4000 | 32 | on demand 0 MiB | 1.73 | 0.433 | 63 % of 32 | 57 | 0.23818 | 0.04731 | maximum segment count reached |
+| 1024 | 800 | 4000 | 32 | on demand 0 MiB | 3.12 | 0.781 | 72 % of 32 | 57 | 0.23818 | 0.04590 | maximum segment count reached |
 
 Cache and thread scaling, 512 px / 400 pins (same 3091-segment result in every row):
 
@@ -44,3 +43,18 @@ Observations:
   are rasterized into temporary vectors before being flattened.
 - At 1024 px, 4000 segments of a 1 px thread do not reach the no-improvement
   point; more segments or a wider thread are needed for comparable density.
+
+Multi-colour greedy (CLI, 512 px, 240 pins, max 4000 steps, same portrait,
+2026-10-27):
+
+| palette | steps | runtime (s) | final error |
+|---|---|---|---|
+| black (via colour path) | 3069 | 0.87 | 0.03537 |
+| black, brown, beige on cream | 3536 | 2.20 | 0.03320 |
+
+The colour path scores three channels per pixel and every colour's
+candidates each step, so runtime grows roughly with the number of colours.
+(The single-colour path is faster for one colour: 0.50 s at 200 pins above.)
+
+Sequence refinement (Algorithm C) and the virtual least-squares
+reconstruction (Algorithm B) are measured in ARCHITECTURE.md.

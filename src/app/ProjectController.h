@@ -223,7 +223,7 @@ signals:
 
 private:
     void setResult(std::vector<int> sequence, std::vector<float> transmittance);
-    void setColorResult(std::vector<sa::ColorStep> steps);
+    void setColorResult(std::vector<sa::ColorStep> steps, std::vector<float> rgb);
     void resetResultState();
     void advancePlayback();
     [[nodiscard]] sa::FrameSpec frameSpec() const;

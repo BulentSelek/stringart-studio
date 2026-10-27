@@ -100,7 +100,18 @@ cd build && ctest --output-on-failure
 ```
 
 Suites: `tst_geometry`, `tst_imageprocessor`, `tst_optimizer`, `tst_export`,
-`tst_project`, `tst_ui`. The UI test runs headless (`QT_QPA_PLATFORM=offscreen`); set
+`tst_project`, `tst_playback`, `tst_sequence`, `tst_leastsquares`,
+`tst_color`, `tst_ui`. A sanitizer build also passes:
+
+```bash
+cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSTRINGART_BUILD_BENCHMARKS=OFF \
+    -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+cmake --build build-asan && (cd build-asan && ctest)
+```
+
+Things that need a person (dialogs, drag and drop, hover, restart) are listed
+in `docs/MANUAL_TESTS.md`. The UI test runs headless (`QT_QPA_PLATFORM=offscreen`); set
 `STRINGART_UI_SCREENSHOT=/path/shot.png` to save a screenshot of the window
 after a full run (`STRINGART_UI_SCREENSHOT2` for the Phase 2 workflow).
 

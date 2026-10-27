@@ -18,11 +18,16 @@ namespace sa {
 // Checkpoints of the buffer are stored every `interval` segments (chosen to
 // fit `memoryBudgetBytes`), so any seek replays at most one interval; moving
 // forward from the current position replays only the new segments.
+//
+// If the caller already has the final buffer (e.g. from the optimizer), it
+// can pass it as `finalState`: construction is then O(1) and the checkpoints
+// are built on the first seek away from the end, so finishing a run never
+// stalls the GUI thread.
 class PlaybackRenderer
 {
 public:
     PlaybackRenderer(PinLayout layout, std::vector<int> sequence, double threadWidth, float opacity,
-                     std::size_t memoryBudgetBytes = std::size_t{64} << 20);
+                     std::vector<float> finalState = {}, std::size_t memoryBudgetBytes = std::size_t{64} << 20);
 
     [[nodiscard]] int segmentCount() const noexcept;
     [[nodiscard]] int position() const noexcept { return m_position; }
@@ -36,11 +41,13 @@ public:
 
 private:
     void apply(int segment);
+    void buildCheckpoints();
 
     PinLayout m_layout;
     std::vector<int> m_sequence;
     double m_width;
     float m_opacity;
+    std::size_t m_budget;
     int m_interval = 1;
     std::vector<std::vector<float>> m_checkpoints; // m_checkpoints[k] = state after k * m_interval segments
     std::vector<float> m_current;
@@ -53,7 +60,7 @@ class ColorPlaybackRenderer
 {
 public:
     ColorPlaybackRenderer(PinLayout layout, std::vector<ColorStep> steps, std::vector<QColor> palette,
-                          QColor background, double threadWidth, float opacity,
+                          QColor background, double threadWidth, float opacity, std::vector<float> finalState = {},
                           std::size_t memoryBudgetBytes = std::size_t{96} << 20);
 
     [[nodiscard]] int segmentCount() const noexcept { return static_cast<int>(m_steps.size()); }
@@ -65,12 +72,15 @@ public:
 
 private:
     void apply(int step);
+    void buildCheckpoints();
 
     PinLayout m_layout;
     std::vector<ColorStep> m_steps;
     std::vector<LinearRgb> m_colors;
+    LinearRgb m_background;
     double m_width;
     float m_opacity;
+    std::size_t m_budget;
     int m_interval = 1;
     std::vector<std::vector<float>> m_checkpoints;
     std::vector<float> m_current;

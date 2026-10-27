@@ -232,6 +232,14 @@ void TestColor::playbackMatchesRenderer()
         current[static_cast<std::size_t>(c)] = next;
     }
     ColorPlaybackRenderer playback(layout, steps, palette, QColor(240, 230, 200), 1.2, 0.3f);
+    ColorPlaybackRenderer lazy(layout, steps, palette, QColor(240, 230, 200), 1.2, 0.3f,
+                               ColorRenderer::renderRgb(layout, steps, palette, QColor(240, 230, 200), 1.2, 0.3f));
+    for (int target : {200, 10, 200}) {
+        const auto a = lazy.seek(target);
+        const std::vector<float> reference = ColorRenderer::renderRgb(layout, steps, palette, QColor(240, 230, 200),
+                                                                      1.2, 0.3f, 1.0, static_cast<std::size_t>(target));
+        QVERIFY(std::equal(a.begin(), a.end(), reference.begin(), reference.end()));
+    }
     for (int target : {200, 0, 1, 77, 76, 150, 3}) {
         const auto rgb = playback.seek(target);
         const std::vector<float> reference = ColorRenderer::renderRgb(layout, steps, palette, QColor(240, 230, 200),
