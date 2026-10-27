@@ -55,6 +55,7 @@ private slots:
     void virtualReconstruction();
     void colourWorkflow();
     void workshopWorkflow();
+    void paletteSuggestion();
 
 private:
     void createUi();
@@ -694,6 +695,54 @@ void TestUi::workshopWorkflow()
     m_controller->beginWinding();
     QCOMPARE(m_controller->playbackPosition(), 3);
     m_controller->endWinding();
+}
+
+void TestUi::paletteSuggestion()
+{
+    QImage picture(300, 300, QImage::Format_RGB32);
+    picture.fill(Qt::white);
+    {
+        QPainter p(&picture);
+        p.fillRect(QRect(0, 0, 150, 300), QColor(210, 40, 40));
+        p.fillRect(QRect(150, 0, 150, 300), QColor(40, 60, 210));
+    }
+    const QString picturePath = m_dir.filePath(QStringLiteral("suggest.png"));
+    QVERIFY(picture.save(picturePath));
+    QVERIFY(m_controller->loadImage(QUrl::fromLocalFile(picturePath)));
+    m_controller->setProperty("colorMode", true);
+    m_controller->setProperty("pinCount", 150);
+    m_controller->setProperty("maxSegments", 1500);
+    m_controller->setPalette({QColor(0, 120, 0), QColor(Qt::yellow)}, Qt::white);
+    findItem(QStringLiteral("categoryTabs"))->setProperty("currentIndex", 2);
+
+    // The button asks for as many colours as the palette has (2).
+    QQuickItem *button = nullptr;
+    QTRY_VERIFY((button = findItem(QStringLiteral("suggestPaletteButton"))) && button->isVisible());
+    QTRY_VERIFY(button->isEnabled());
+    QMetaObject::invokeMethod(button, "clicked");
+    QVERIFY(m_controller->suggestingPalette());
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->suggestingPalette(), 60000);
+    const QVariantList palette = m_controller->palette();
+    QCOMPARE(palette.size(), 2);
+    // The greens are replaced by colours of the image (black and red score
+    // best here under the objective, slightly ahead of red and blue).
+    bool imageColour = false;
+    for (const QVariant &v : palette) {
+        const QColor c = v.value<QColor>();
+        QVERIFY2(c.green() <= std::max(c.red(), c.blue()), qPrintable(c.name()));
+        imageColour |= c.red() > c.blue() + 60 || c.blue() > c.red() + 60;
+    }
+    QVERIFY2(imageColour, qPrintable(m_controller->statusText()));
+
+    // Cancelling keeps the palette.
+    m_controller->suggestPalette(4);
+    m_controller->cancelPaletteSuggestion();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->suggestingPalette(), 30000);
+    QCOMPARE(m_controller->palette(), palette);
+
+    // Destroying the UI while a suggestion runs is safe.
+    m_controller->suggestPalette(3);
+    QVERIFY(m_controller->suggestingPalette());
 }
 
 QTEST_MAIN(TestUi)

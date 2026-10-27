@@ -29,6 +29,7 @@ src/
 │   ├── ColorGreedyOptimizer.* multi-colour greedy
 │   ├── GreedyOptimizer.*      Algorithm A
 │   ├── LeastSquaresOptimizer.* Algorithm B (virtual)
+│   ├── PaletteSuggester.*     thread colours from the image (multi-colour)
 │   └── SequenceOptimizer.*    Algorithm C
 ├── app/                   stringart_ui (QML module "StringArtStudio") + stringart-studio
 │   ├── ProjectController.*    UI state and commands exposed to QML
@@ -217,6 +218,41 @@ cumulative length, SVG with one stroke colour per line, project/JSON with
 `color.palette` and `result.steps` (continuity is validated on load).
 Sequence refinement and the virtual least-squares reconstruction are
 single-colour only.
+
+### Palette suggestion
+
+`PaletteSuggester` proposes thread colours for a given image, frame, board
+colour and run settings (UI: *From image … Suggest*; CLI: `--colors auto:N`).
+
+1. Candidates: with "over" compositing a pixel explained by one thread
+   colour lies on the ray from the board colour towards that colour, so the
+   directions of the target pixels from the board colour are clustered
+   (weighted spherical k-means, N + 2 clusters, deterministic seeding). Each
+   cluster gives the most saturated colour on its ray and the "just deep
+   enough" colour (95th percentile distance / 0.7); black (white on a dark
+   board) is always a candidate.
+2. Selection by the real objective: colours are added one at a time, each
+   the candidate with the lowest error of a `ColorGreedyOptimizer` run on a
+   proxy (canvas 112 px, at most 120 pins, segments scaled to the same thread
+   density), then one pass tries to replace each chosen colour by every
+   other candidate. This captures mixtures, which clustering alone misses.
+
+Measured (CLI, 512 px, 200 pins, 3000 steps, synthetic images,
+2026-10-27; error of the full run):
+
+| image | black, red, blue (preset) | auto:3 | suggested colours | suggestion time |
+|---|---|---|---|---|
+| red / blue halves, black disk | 0.12084 | 0.11023 | black, red, blue | 2.3 s |
+| sunset gradient, dark disk | 0.04665 | 0.04533 | black, dark red, orange | 2.5 s |
+| colour plasma | 0.09305 | 0.09305 | black, brown, green | 2.3 s |
+
+On the plasma image both palettes end with the same error: the greedy run
+uses almost only the black thread, since on a white board darkening
+dominates the objective. A coloured board can matter more than the thread
+colours; the suggester keeps the chosen board colour. Asking for more
+colours (auto:5) did not lower the error further on these images. The
+selection is greedy on a proxy, so it is a good starting point, not a
+guaranteed optimum.
 
 ## Winding playback
 

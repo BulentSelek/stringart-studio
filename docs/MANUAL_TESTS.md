@@ -36,6 +36,8 @@ own photos.
       re-running.
 - [ ] *Multi-colour threads*: presets, colour picker on a swatch, *Add
       colour…* (max 8), remove (min 1), board colour picker.
+- [ ] *From image … Suggest* on a colourful photo: progress in the button,
+      clicking again cancels, the palette is replaced when it finishes.
 
 ## Run and results
 - [ ] *Start*; the String art and Residual views update live; the UI stays

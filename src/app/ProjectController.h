@@ -8,6 +8,7 @@
 
 #include <QColor>
 #include <QElapsedTimer>
+#include <QFuture>
 #include <QImage>
 #include <QObject>
 #include <QPointF>
@@ -20,6 +21,7 @@
 
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <vector>
 
 class ImageStore;
@@ -70,6 +72,8 @@ private:
     Q_PROPERTY(QColor colorBackground MEMBER m_colorBackground NOTIFY paletteChanged)
     Q_PROPERTY(bool resultIsColor READ resultIsColor NOTIFY stateChanged)
     Q_PROPERTY(QColor currentThreadColor READ currentThreadColor NOTIFY playbackChanged)
+    Q_PROPERTY(bool suggestingPalette READ suggestingPalette NOTIFY suggestionChanged)
+    Q_PROPERTY(double suggestionProgress READ suggestionProgress NOTIFY suggestionChanged)
     Q_PROPERTY(QColor threadColor MEMBER m_threadColor NOTIFY renderStyleChanged)
     Q_PROPERTY(QColor backgroundColor MEMBER m_backgroundColor NOTIFY renderStyleChanged)
 
@@ -146,6 +150,10 @@ public:
     Q_INVOKABLE void setPaletteColor(int index, const QColor &color);
     Q_INVOKABLE void setPalette(const QVariantList &colors, const QColor &background);
     Q_INVOKABLE void fitWholeImage();
+    // Replaces the palette with `count` colours chosen for the current image,
+    // frame and run settings (PaletteSuggester); runs in the background.
+    Q_INVOKABLE void suggestPalette(int count);
+    Q_INVOKABLE void cancelPaletteSuggestion();
     Q_INVOKABLE void start();
     // Algorithm C on the current result (continuous thread preserved).
     Q_INVOKABLE void refineSequence();
@@ -191,6 +199,8 @@ public:
     [[nodiscard]] QVariantList palette() const;
     [[nodiscard]] QColor currentThreadColor() const;
     [[nodiscard]] bool running() const { return m_running; }
+    [[nodiscard]] bool suggestingPalette() const { return m_suggestingPalette; }
+    [[nodiscard]] double suggestionProgress() const { return m_suggestionProgress; }
     [[nodiscard]] bool paused() const { return m_paused; }
     [[nodiscard]] bool exporting() const { return m_exporting; }
     [[nodiscard]] QString imageName() const { return m_imageName; }
@@ -247,6 +257,7 @@ signals:
     void paletteChanged();
     void playbackSpeedChanged();
     void windingChanged();
+    void suggestionChanged();
 
 private:
     void setResult(std::vector<int> sequence, std::vector<float> transmittance);
@@ -364,6 +375,11 @@ private:
     double m_playbackCarry = 0.0;  // fractional segments accumulated between ticks
     QTimer m_playTimer;
     QElapsedTimer m_playClock;
+
+    bool m_suggestingPalette = false;
+    double m_suggestionProgress = 0.0;
+    std::stop_source m_suggestionStop;
+    QFuture<void> m_suggestion;
 
     bool m_winding = false;
     QTextToSpeech *m_speech = nullptr; // created on first use

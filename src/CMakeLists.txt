@@ -37,6 +37,8 @@ qt_add_library(stringart_core STATIC
     algorithms/IOptimizer.h
     algorithms/LeastSquaresOptimizer.cpp
     algorithms/LeastSquaresOptimizer.h
+    algorithms/PaletteSuggester.cpp
+    algorithms/PaletteSuggester.h
     algorithms/SequenceOptimizer.cpp
     algorithms/SequenceOptimizer.h
 )

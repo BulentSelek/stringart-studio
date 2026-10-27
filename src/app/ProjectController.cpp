@@ -5,6 +5,7 @@
 #include "algorithms/ColorGreedyOptimizer.h"
 #include "algorithms/GreedyOptimizer.h"
 #include "algorithms/LeastSquaresOptimizer.h"
+#include "algorithms/PaletteSuggester.h"
 #include "algorithms/SequenceOptimizer.h"
 #include "core/ExportManager.h"
 #include "core/ImageProcessor.h"
@@ -69,7 +70,12 @@ ProjectController::ProjectController(std::shared_ptr<ImageStore> store, QObject 
     setStatus(tr("Load an image to begin (File dialog or drag and drop)."));
 }
 
-ProjectController::~ProjectController() = default;
+ProjectController::~ProjectController()
+{
+    // The suggestion task posts to this object; let it finish first.
+    m_suggestionStop.request_stop();
+    m_suggestion.waitForFinished();
+}
 
 QString ProjectController::localPath(const QUrl &url)
 {
@@ -359,6 +365,76 @@ void ProjectController::setPalette(const QVariantList &colors, const QColor &bac
     m_palette = std::move(palette);
     m_colorBackground = background;
     emit paletteChanged();
+}
+
+void ProjectController::suggestPalette(int count)
+{
+    if (m_suggestingPalette || m_running)
+        return;
+    if (m_baseTimer.isActive()) {
+        m_baseTimer.stop();
+        updateBase();
+    }
+    if (!m_colorMode || m_processedRgb.isNull()) {
+        setStatus(tr("Load an image and turn on multi-colour threads to get a palette suggestion."));
+        return;
+    }
+    count = std::clamp(count, 1, sa::ColorGreedyOptimizer::kMaxColors);
+    m_suggestionStop = std::stop_source();
+    m_suggestingPalette = true;
+    m_suggestionProgress = 0.0;
+    emit suggestionChanged();
+    setStatus(tr("Searching for %n thread colour(s)...", nullptr, count));
+    struct Outcome
+    {
+        std::vector<QColor> palette;
+        QString failure;
+    };
+    const QColor background = m_colorBackground;
+    QFuture<Outcome> task =
+        QtConcurrent::run([this, image = m_processedRgb, frame = frameSpec(), config = currentSettings().config,
+                           workingSize = m_workingSize, count, background, stop = m_suggestionStop.get_token()] {
+            Outcome outcome;
+            try {
+                outcome.palette = sa::PaletteSuggester::suggest(
+                    image, frame, config, workingSize, count, background, stop, [this](int done, int total) {
+                        QMetaObject::invokeMethod(this, [this, done, total] {
+                            m_suggestionProgress = static_cast<double>(done) / std::max(1, total);
+                            emit suggestionChanged();
+                        }, Qt::QueuedConnection);
+                    });
+            } catch (const std::exception &e) {
+                outcome.failure = QString::fromUtf8(e.what());
+            }
+            return outcome;
+        });
+    // The destructor waits for the worker task only, never for this continuation.
+    m_suggestion = QFuture<void>(task);
+    task.then(this, [this, count, background](const Outcome &outcome) {
+            const bool cancelled = m_suggestionStop.stop_requested();
+            m_suggestingPalette = false;
+            emit suggestionChanged();
+            if (!outcome.failure.isEmpty()) {
+                setStatus(tr("Palette suggestion failed: %1").arg(outcome.failure));
+            } else if (cancelled) {
+                setStatus(tr("Palette suggestion cancelled."));
+            } else if (!outcome.palette.empty()) {
+                QVariantList colors;
+                for (const QColor &c : outcome.palette)
+                    colors.append(c);
+                setPalette(colors, background);
+                setStatus(outcome.palette.size() < static_cast<std::size_t>(count)
+                              ? tr("Suggested %1 colours; the image does not support more distinct ones.")
+                                    .arg(outcome.palette.size())
+                              : tr("Suggested %n colour(s) for this image and frame.", nullptr, count));
+            }
+        });
+}
+
+void ProjectController::cancelPaletteSuggestion()
+{
+    if (m_suggestingPalette)
+        m_suggestionStop.request_stop();
 }
 
 void ProjectController::scheduleBaseUpdate()

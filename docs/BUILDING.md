@@ -85,6 +85,7 @@ honoured.
     --edge-emphasis 1.5 --rotate 0 --svg out.svg --json out.json
 ./build/src/cli/stringart-cli portrait.jpg --colors "#000000,#7a4a2a,#c9a27a" --background "#f4ecd8" \
     --png colour.png --csv colour.csv
+./build/src/cli/stringart-cli photo.jpg --colors auto:3 --png colour.png
 ./build/src/cli/stringart-cli portrait.jpg --template-pdf pins.pdf --template-paper a4 \
     --guide-pdf winding.pdf
 ./build/src/cli/stringart-cli --help

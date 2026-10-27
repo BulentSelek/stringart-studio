@@ -427,6 +427,37 @@ Pane {
                         onActivated: index => root.controller.setPalette(presets[index].colors, presets[index].background)
                     }
 
+                    RowLayout {
+                        Layout.fillWidth: true
+                        HelpLabel {
+                            text: qsTr("From image")
+                            help: qsTr("Chooses this many thread colours for the current image, frame and background by test runs on a small copy of the problem. Takes a few seconds.")
+                            Layout.fillWidth: true
+                        }
+                        SpinBox {
+                            id: suggestCount
+                            from: 1
+                            to: 8
+                            value: Math.max(1, root.controller.palette.length)
+                            editable: true
+                            enabled: !root.controller.suggestingPalette
+                            Layout.preferredWidth: 96
+                        }
+                        Button {
+                            objectName: "suggestPaletteButton"
+                            text: root.controller.suggestingPalette
+                                  ? qsTr("%1 %").arg(Math.round(root.controller.suggestionProgress * 100))
+                                  : qsTr("Suggest")
+                            enabled: root.controller.hasImage
+                            Layout.preferredWidth: 96
+                            onClicked: root.controller.suggestingPalette ? root.controller.cancelPaletteSuggestion()
+                                                                         : root.controller.suggestPalette(suggestCount.value)
+                            ToolTip.visible: hovered
+                            ToolTip.text: root.controller.suggestingPalette ? qsTr("Cancel")
+                                                                            : qsTr("Suggest colours from the image")
+                        }
+                    }
+
                     Repeater {
                         model: root.controller.palette
                         delegate: RowLayout {

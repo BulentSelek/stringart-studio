@@ -1,5 +1,6 @@
 #include "algorithms/ColorGreedyOptimizer.h"
 #include "algorithms/GreedyOptimizer.h"
+#include "algorithms/PaletteSuggester.h"
 #include "algorithms/SequenceOptimizer.h"
 #include "core/ExportManager.h"
 #include "core/ImageProcessor.h"
@@ -75,7 +76,7 @@ int main(int argc, char *argv[])
         {QStringLiteral("height-mm"), QStringLiteral("Frame height in mm (ellipse, rectangle)."), QStringLiteral("mm"), QStringLiteral("500")},
         {QStringLiteral("pins-csv"), QStringLiteral("Custom pin positions (x, y in mm); implies --shape custom."), QStringLiteral("path")},
         {QStringLiteral("rotate"), QStringLiteral("Rotate the input clockwise by degrees."), QStringLiteral("deg"), QStringLiteral("0")},
-        {QStringLiteral("colors"), QStringLiteral("Multi-colour mode: comma-separated thread colours, e.g. #000000,#b03a2e."), QStringLiteral("list")},
+        {QStringLiteral("colors"), QStringLiteral("Multi-colour mode: comma-separated thread colours, e.g. #000000,#b03a2e, or auto:N to suggest N colours from the image."), QStringLiteral("list")},
         {QStringLiteral("background"), QStringLiteral("Board colour for multi-colour mode."), QStringLiteral("color"), QStringLiteral("#ffffff")},
         {QStringLiteral("refine-passes"), QStringLiteral("Sequence refinement passes after greedy (0 = off)."), QStringLiteral("n"), QStringLiteral("0")},
         {QStringLiteral("refine-neighborhood"), QStringLiteral("Refinement candidates within +-n pins (0 = all)."), QStringLiteral("n"), QStringLiteral("20")},
@@ -162,22 +163,41 @@ int main(int argc, char *argv[])
         const bool quiet = parser.isSet(QStringLiteral("quiet"));
         int lastReported = -1;
         // Multi-colour mode: palette from --colors, RGB target from the same preprocessing.
+        const QString colors = parser.value(QStringLiteral("colors")).trimmed();
+        const bool autoColors = colors.startsWith(QStringLiteral("auto"));
         std::vector<QColor> palette;
-        for (const QString &name : parser.value(QStringLiteral("colors")).split(u',', Qt::SkipEmptyParts)) {
-            const QColor c = QColor::fromString(name.trimmed());
-            if (!c.isValid())
-                fail(QStringLiteral("invalid colour \"%1\" in --colors").arg(name));
-            palette.push_back(c);
+        if (!autoColors) {
+            for (const QString &name : colors.split(u',', Qt::SkipEmptyParts)) {
+                const QColor c = QColor::fromString(name.trimmed());
+                if (!c.isValid())
+                    fail(QStringLiteral("invalid colour \"%1\" in --colors").arg(name));
+                palette.push_back(c);
+            }
         }
         const QColor background = QColor::fromString(parser.value(QStringLiteral("background")));
         if (!background.isValid())
             fail(QStringLiteral("invalid --background colour"));
-        const bool colorMode = !palette.empty();
-        std::unique_ptr<sa::IOptimizer> optimizer;
+        const bool colorMode = autoColors || !palette.empty();
+        sa::RgbImage rgb;
         if (colorMode) {
-            const sa::RgbImage rgb = sa::ImageProcessor::applyTone(
+            rgb = sa::ImageProcessor::applyTone(
                 sa::ImageProcessor::prepareBaseRgb(original, pins.canvasWidth(), pins.canvasHeight(), {}, rotation),
                 tone);
+        }
+        if (autoColors) {
+            bool ok = true;
+            const int count = colors == u"auto" ? 3 : colors.mid(5).toInt(&ok);
+            if (!ok || !colors.startsWith(QStringLiteral("auto")) || (colors != u"auto" && colors[4] != u':')
+                || count < 1 || count > sa::ColorGreedyOptimizer::kMaxColors)
+                fail(QStringLiteral("--colors auto:N needs 1 <= N <= %1").arg(sa::ColorGreedyOptimizer::kMaxColors));
+            palette = sa::PaletteSuggester::suggest(rgb, frame, config, size, count, background);
+            QStringList names;
+            for (const QColor &c : palette)
+                names << c.name();
+            std::printf("suggested colours: %s\n", qPrintable(names.join(u',')));
+        }
+        std::unique_ptr<sa::IOptimizer> optimizer;
+        if (colorMode) {
             optimizer = std::make_unique<sa::ColorGreedyOptimizer>(rgb.channels, palette, background);
         } else {
             optimizer = std::make_unique<sa::GreedyOptimizer>();
