@@ -365,6 +365,24 @@ sequence in the tests) and when the segment budget leaves room for
 insertions. Available as *Refine sequence* in the UI and `--refine-passes` /
 `--refine-neighborhood` in the CLI.
 
+### Tried and not adopted: greedy lookahead
+
+A two-step lookahead for Algorithm A was implemented and measured
+(2026-10-27, CLI, 512 px, 200 pins): the B best next pins were re-ranked by
+their own gain plus the best gain of the step after them, committing one
+step at a time. It did not help:
+
+| image | segments | error, no lookahead | error, lookahead 4 | runtime |
+|---|---|---|---|---|
+| synthetic portrait | 3000 | 0.037358 | 0.037365 | 0.47 s → 2.42 s |
+| synthetic disk | 1000 | 0.084724 | 0.084795 | 0.19 s → 0.88 s |
+| sunset (grey) | 3000 | 0.024964 | 0.024971 | 0.51 s → 2.53 s |
+
+Lookahead 2 and 8 on the portrait gave 0.037357 and 0.037371. With
+hundreds of nearly equivalent candidate lines per step, a one-step-deeper
+view does not change the outcome noticeably, so the code was removed
+rather than offered as a slower option with no benefit.
+
 ## Algorithm B — least-squares line weights (implemented, virtual)
 
 `LeastSquaresOptimizer` fixes the candidate set to the distinct lines of the
