@@ -23,7 +23,8 @@ src/
 │   └── ProjectFile.*          JSON project format, custom pin CSV import
 ├── algorithms/
 │   ├── IOptimizer.h           common optimizer interface
-│   └── GreedyOptimizer.*      Algorithm A
+│   ├── GreedyOptimizer.*      Algorithm A
+│   └── SequenceOptimizer.*    Algorithm C
 ├── app/                   stringart_ui (QML module "StringArtStudio") + stringart-studio
 │   ├── ProjectController.*    UI state and commands exposed to QML
 │   ├── OptimizationWorker.*   std::jthread worker, pause/resume/cancel, throttled previews
@@ -205,11 +206,47 @@ where the result is lighter than the target (more thread would help), blue
 where it is darker, white where they match, gray where the weight is zero.
 The worker publishes it with each preview.
 
-## Algorithms B and C
+## Algorithm C — sequence refinement (implemented)
 
-Not implemented (Phase 4). `IOptimizer` is the extension point. When added,
-the UI must label least-squares line weights as *virtual reconstruction*
-quality, distinct from the manufacturable single-thread sequence.
+`SequenceOptimizer` (an `IOptimizer`) improves an existing continuous
+sequence by local search. Moves at position *i* with neighbours
+`a = s[i-1], b = s[i], c = s[i+1]`:
+
+| move | change | when |
+|---|---|---|
+| relocate | `(a,b),(b,c) → (a,p),(p,c)`, `p` within ± *reach* pins of `b` (all pins if 0) | always |
+| delete | `(a,b),(b,c) → (a,c)` | optional (`changeSegmentCount`) |
+| insert | `(a,b) → (a,p),(p,b)`, any `p` | optional, while below `maxSegments` |
+
+The start pin is fixed and every move keeps consecutive segments sharing an
+endpoint, so the result is still one continuous thread; moves respect the
+separation, `canConnect`, repeated-line and maximum-length rules. The change
+of the objective is exact: with the multiplicative model a segment is removed
+by dividing by `(1 − a·c)` and added by multiplying, so only the pixels of the
+affected lines are evaluated (requires opacity < 1). The best improving move
+per position is applied (deterministic ties), positions are swept in order,
+and sweeps repeat until one finds nothing or *passes* is reached; `T` is
+re-rendered exactly after each sweep. Tests check exactness (after
+convergence, no single relocation improves the fully recomputed error),
+continuity, constraints and thread-count independence.
+
+Complexity per sweep: `O(n · K · L)` with `K` = 2·reach relocations (+ all
+pins for insertions while below the budget).
+
+Measured effect (512 px synthetic portrait, 240 pins): on a greedy result
+that used its full 3000-segment budget, refinement lowers the error by
+≈ 0.02 % (reach 20, 2 s) to 0.07 % (all pins, 5 sweeps, 7 s). Greedy is
+already close to a local optimum for these moves; the gain is larger on
+sequences that did not come from greedy (≈ 10 % or more on a naive
+sequence in the tests) and when the segment budget leaves room for
+insertions. Available as *Refine sequence* in the UI and `--refine-passes` /
+`--refine-neighborhood` in the CLI.
+
+## Algorithm B
+
+Not implemented yet. When added, the UI must label least-squares line
+weights as *virtual reconstruction* quality, distinct from the
+manufacturable single-thread sequence.
 
 ## Threading and UI
 

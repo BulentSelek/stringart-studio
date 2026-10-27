@@ -29,6 +29,8 @@ qt_add_library(stringart_core STATIC
     algorithms/GreedyOptimizer.cpp
     algorithms/GreedyOptimizer.h
     algorithms/IOptimizer.h
+    algorithms/SequenceOptimizer.cpp
+    algorithms/SequenceOptimizer.h
 )
 
 target_include_directories(stringart_core

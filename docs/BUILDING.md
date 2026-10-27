@@ -49,7 +49,11 @@ hover (?):
 3. **Thread** — opacity, width (with the equivalent physical thread
    diameter) and colours.
 4. **Run** — working size, max. segments, edge emphasis; *Advanced*: max.
-   thread length, repeated lines.
+   thread length, repeated lines, refinement passes and reach.
+
+After a run, **Refine sequence** (right panel) runs a local search on the
+finished thread that moves, removes or inserts single pins where that lowers
+the error; the thread stays continuous.
 
 Selecting *Image* or *Frame* switches the centre view to *Original* or
 *Processed*. Press **Start** on the right; the *String art* and *Residual*

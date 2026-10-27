@@ -432,6 +432,22 @@ Pane {
                         enabled: !root.controller.running
                         onModified: v => root.controller.maxLengthM = v
                     }
+                    IntField {
+                        label: qsTr("Refine passes")
+                        help: qsTr("Sweeps of \"Refine sequence\" over the whole thread (stops earlier when a sweep finds nothing).")
+                        from: 1; to: 50
+                        value: root.controller.refinePasses
+                        enabled: !root.controller.running
+                        onModified: v => root.controller.refinePasses = v
+                    }
+                    IntField {
+                        label: qsTr("Refine reach (pins)")
+                        help: qsTr("\"Refine sequence\" tries moving each pin up to this many positions along the frame. 0 = all pins (slower).")
+                        from: 0; to: 1000
+                        value: root.controller.refineNeighborhood
+                        enabled: !root.controller.running
+                        onModified: v => root.controller.refineNeighborhood = v
+                    }
                     Switch {
                         text: qsTr("Allow repeated lines")
                         checked: root.controller.allowRepeats

@@ -40,6 +40,7 @@ private slots:
     void windowStatePersists();
     void parametersPersist();
     void playbackWorkflow();
+    void refineWorkflow();
 
 private:
     void createUi();
@@ -451,6 +452,28 @@ void TestUi::playbackWorkflow()
     const QByteArray shot = qgetenv("STRINGART_UI_PLAYBACK");
     if (!shot.isEmpty())
         QVERIFY(m_window->grabWindow().save(QString::fromLocal8Bit(shot)));
+}
+
+void TestUi::refineWorkflow()
+{
+    QVERIFY(m_controller->loadImage(m_portrait));
+    m_controller->setProperty("pinCount", 120);
+    m_controller->setProperty("maxSegments", 700);
+    m_controller->setProperty("refinePasses", 2);
+    m_controller->start();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 60000);
+    const double greedyError = m_controller->error();
+    const double initialError = m_controller->initialError();
+
+    m_controller->refineSequence();
+    QVERIFY(m_controller->running());
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->running(), 120000);
+    QVERIFY2(m_controller->statusText().startsWith(QStringLiteral("Refined")), qPrintable(m_controller->statusText()));
+    QVERIFY(m_controller->error() <= greedyError);
+    QCOMPARE(m_controller->initialError(), initialError);
+    QCOMPARE(m_controller->resultSegments(), m_controller->segments());
+    QCOMPARE(m_controller->playbackPosition(), m_controller->resultSegments());
+    qInfo("greedy %.6f -> refined %.6f", greedyError, m_controller->error());
 }
 
 QTEST_MAIN(TestUi)

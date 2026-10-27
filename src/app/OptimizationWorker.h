@@ -1,5 +1,6 @@
 #pragma once
 
+#include "algorithms/IOptimizer.h"
 #include "core/OptimizationConfig.h"
 #include "core/OptimizationProblem.h"
 #include "core/StringArtResult.h"
@@ -16,10 +17,11 @@
 
 class ImageStore;
 
-// Runs the greedy optimizer on a dedicated std::jthread. The GUI thread only
-// receives throttled notifications: at most every kPreviewIntervalMs the
-// worker renders the thread image and the residual map into the shared
-// ImageStore and emits progressed(); the controller then reads snapshot(). Pausing blocks inside the progress
+// Runs an optimizer (greedy or sequence refinement) on a dedicated
+// std::jthread. The GUI thread only receives throttled notifications: at most
+// every kPreviewIntervalMs the worker renders the thread image and the
+// residual map into the shared ImageStore and emits progressed(); the
+// controller then reads snapshot(). Pausing blocks inside the progress
 // callback; cancelling requests a stop on the thread's stop_token.
 class OptimizationWorker final : public QObject
 {
@@ -41,8 +43,9 @@ public:
     explicit OptimizationWorker(std::shared_ptr<ImageStore> store, QObject *parent = nullptr);
     ~OptimizationWorker() override;
 
-    // Starts a run; any previous run is cancelled and joined first.
-    void start(sa::OptimizationProblem problem, sa::OptimizationConfig config, sa::RenderStyle style);
+    // Starts a run of `optimizer`; any previous run is cancelled and joined first.
+    void start(std::unique_ptr<sa::IOptimizer> optimizer, sa::OptimizationProblem problem,
+               sa::OptimizationConfig config, sa::RenderStyle style);
     void pause();
     void resume();
     void cancel();
@@ -57,8 +60,8 @@ signals:
     void finished(bool success);
 
 private:
-    void run(std::stop_token stop, const sa::OptimizationProblem &problem, const sa::OptimizationConfig &config,
-             const sa::RenderStyle &style);
+    void run(std::stop_token stop, sa::IOptimizer &optimizer, const sa::OptimizationProblem &problem,
+             const sa::OptimizationConfig &config, const sa::RenderStyle &style);
     void publishPreview(const sa::OptimizationProgress &progress, const sa::RenderStyle &style,
                         const sa::OptimizationProblem &problem);
 

@@ -1,4 +1,5 @@
 #include "algorithms/GreedyOptimizer.h"
+#include "algorithms/SequenceOptimizer.h"
 #include "core/ExportManager.h"
 #include "core/ImageProcessor.h"
 #include "core/ProjectFile.h"
@@ -67,6 +68,8 @@ int main(int argc, char *argv[])
         {QStringLiteral("height-mm"), QStringLiteral("Frame height in mm (ellipse, rectangle)."), QStringLiteral("mm"), QStringLiteral("500")},
         {QStringLiteral("pins-csv"), QStringLiteral("Custom pin positions (x, y in mm); implies --shape custom."), QStringLiteral("path")},
         {QStringLiteral("rotate"), QStringLiteral("Rotate the input clockwise by degrees."), QStringLiteral("deg"), QStringLiteral("0")},
+        {QStringLiteral("refine-passes"), QStringLiteral("Sequence refinement passes after greedy (0 = off)."), QStringLiteral("n"), QStringLiteral("0")},
+        {QStringLiteral("refine-neighborhood"), QStringLiteral("Refinement candidates within +-n pins (0 = all)."), QStringLiteral("n"), QStringLiteral("20")},
         {QStringLiteral("edge-emphasis"), QStringLiteral("Extra error weight on edges (0 = plain MSE)."), QStringLiteral("k"), QStringLiteral("0")},
         {QStringLiteral("brightness"), QStringLiteral("Brightness offset [-1, 1]."), QStringLiteral("v"), QStringLiteral("0")},
         {QStringLiteral("contrast"), QStringLiteral("Contrast multiplier."), QStringLiteral("v"), QStringLiteral("1")},
@@ -147,7 +150,7 @@ int main(int argc, char *argv[])
         const bool quiet = parser.isSet(QStringLiteral("quiet"));
         int lastReported = -1;
         sa::GreedyOptimizer optimizer;
-        const sa::StringArtResult result =
+        sa::StringArtResult result =
             optimizer.optimize(problem, config, {}, [&](const sa::OptimizationProgress &p) {
                 if (quiet || p.segments == lastReported || (p.segments % 250 != 0 && p.segments != p.maxSegments))
                     return;
@@ -157,6 +160,21 @@ int main(int argc, char *argv[])
             });
         if (!quiet)
             std::fprintf(stderr, "\n");
+
+        const int refinePasses = intOption(parser, QStringLiteral("refine-passes"));
+        if (refinePasses > 0) {
+            const double greedyError = result.finalError;
+            const double greedySeconds = result.elapsedSeconds;
+            sa::SequenceOptimizer refiner(result.sequence,
+                                          {refinePasses, intOption(parser, QStringLiteral("refine-neighborhood"))});
+            const double initialError = result.initialError;
+            result = refiner.optimize(problem, config);
+            std::printf("refinement:      %.6f -> %.6f, %d moves in %d passes, %.3f s (%s)\n", greedyError,
+                        result.finalError, refiner.improvements(), refiner.passes(), result.elapsedSeconds,
+                        sa::toString(result.stopReason));
+            result.initialError = initialError;
+            result.elapsedSeconds += greedySeconds;
+        }
 
         std::printf("segments:        %d\n", result.segmentCount());
         std::printf("stop reason:     %s\n", sa::toString(result.stopReason));

@@ -60,6 +60,8 @@ private:
     Q_PROPERTY(double threadWidth MEMBER m_threadWidth NOTIFY settingsChanged)
     Q_PROPERTY(double maxLengthM MEMBER m_maxLengthM NOTIFY settingsChanged)
     Q_PROPERTY(bool allowRepeats MEMBER m_allowRepeats NOTIFY settingsChanged)
+    Q_PROPERTY(int refinePasses MEMBER m_refinePasses NOTIFY settingsChanged)
+    Q_PROPERTY(int refineNeighborhood MEMBER m_refineNeighborhood NOTIFY settingsChanged)
     Q_PROPERTY(double edgeEmphasis MEMBER m_edgeEmphasis NOTIFY settingsChanged)
     Q_PROPERTY(QColor threadColor MEMBER m_threadColor NOTIFY renderStyleChanged)
     Q_PROPERTY(QColor backgroundColor MEMBER m_backgroundColor NOTIFY renderStyleChanged)
@@ -117,6 +119,8 @@ public:
     Q_INVOKABLE void resetCrop();
     Q_INVOKABLE void fitWholeImage();
     Q_INVOKABLE void start();
+    // Algorithm C on the current result (continuous thread preserved).
+    Q_INVOKABLE void refineSequence();
     Q_INVOKABLE void pause();
     Q_INVOKABLE void resume();
     Q_INVOKABLE void cancel();
@@ -221,6 +225,10 @@ private:
     double m_threadWidth = 1.0;
     double m_maxLengthM = 0.0;
     bool m_allowRepeats = false;
+    int m_refinePasses = 3;
+    int m_refineNeighborhood = 20;
+    bool m_refining = false;
+    double m_refineStartError = 0.0;
     double m_edgeEmphasis = 0.0;
     QColor m_threadColor = Qt::black;
     QColor m_backgroundColor = Qt::white;

@@ -15,6 +15,8 @@ const char *toString(StopReason reason) noexcept
         return "maximum thread length reached";
     case StopReason::Cancelled:
         return "cancelled";
+    case StopReason::MaxPasses:
+        return "maximum refinement passes reached";
     }
     return "unknown";
 }

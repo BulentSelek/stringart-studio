@@ -1,7 +1,6 @@
 #include "OptimizationWorker.h"
 
 #include "ImageStore.h"
-#include "algorithms/GreedyOptimizer.h"
 
 #include <chrono>
 #include <exception>
@@ -18,7 +17,8 @@ OptimizationWorker::~OptimizationWorker()
         m_thread.join();
 }
 
-void OptimizationWorker::start(sa::OptimizationProblem problem, sa::OptimizationConfig config, sa::RenderStyle style)
+void OptimizationWorker::start(std::unique_ptr<sa::IOptimizer> optimizer, sa::OptimizationProblem problem,
+                               sa::OptimizationConfig config, sa::RenderStyle style)
 {
     cancel();
     if (m_thread.joinable())
@@ -31,9 +31,8 @@ void OptimizationWorker::start(sa::OptimizationProblem problem, sa::Optimization
         m_result.reset();
         m_error.clear();
     }
-    m_thread = std::jthread([this, problem = std::move(problem), config, style](std::stop_token stop) {
-        run(stop, problem, config, style);
-    });
+    m_thread = std::jthread([this, optimizer = std::move(optimizer), problem = std::move(problem), config,
+                             style](std::stop_token stop) { run(stop, *optimizer, problem, config, style); });
 }
 
 void OptimizationWorker::pause()
@@ -94,7 +93,7 @@ void OptimizationWorker::publishPreview(const sa::OptimizationProgress &progress
     emit progressed();
 }
 
-void OptimizationWorker::run(std::stop_token stop, const sa::OptimizationProblem &problem,
+void OptimizationWorker::run(std::stop_token stop, sa::IOptimizer &optimizer, const sa::OptimizationProblem &problem,
                              const sa::OptimizationConfig &config, const sa::RenderStyle &style)
 {
     using Clock = std::chrono::steady_clock;
@@ -116,7 +115,6 @@ void OptimizationWorker::run(std::stop_token stop, const sa::OptimizationProblem
     };
 
     try {
-        sa::GreedyOptimizer optimizer;
         sa::StringArtResult result = optimizer.optimize(problem, config, stop, onProgress);
         m_store->set(QStringLiteral("result"), sa::ThreadRenderer::toImage(result.transmittance, result.width,
                                                                            result.height, style.background,

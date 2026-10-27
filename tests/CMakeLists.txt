@@ -19,6 +19,7 @@ stringart_add_test(tst_optimizer)
 stringart_add_test(tst_export)
 stringart_add_test(tst_project)
 stringart_add_test(tst_playback)
+stringart_add_test(tst_sequence)
 
 if(STRINGART_BUILD_APP)
     stringart_add_test(tst_ui)
