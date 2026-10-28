@@ -256,6 +256,10 @@ std::vector<QColor> PaletteSuggester::suggest(const RgbImage &image, const Frame
     problem.pins = layout;
 
     // Same thread density: passes per pixel scale with segments / canvas size.
+    // The thread keeps its width in pixels, so on the smaller canvas it is
+    // physically thicker; fewer, thicker threads cover the same share of each
+    // pixel. Scaling the width down instead would need the full segment count
+    // and make every proxy run workingSize / proxySize times slower.
     OptimizationConfig proxyConfig = config;
     proxyConfig.maxSegments = std::max(
         30, static_cast<int>(std::lround(static_cast<double>(config.maxSegments) * proxySize / workingSize)));

@@ -6,7 +6,6 @@
 
 #include <functional>
 #include <stop_token>
-#include <string>
 
 namespace sa {
 
@@ -18,8 +17,6 @@ class IOptimizer
 {
 public:
     virtual ~IOptimizer() = default;
-
-    [[nodiscard]] virtual std::string name() const = 0;
 
     // Throws std::invalid_argument for an invalid problem or config.
     // Cancellation via `stop` returns the partial result with StopReason::Cancelled.

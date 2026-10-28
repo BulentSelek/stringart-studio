@@ -251,14 +251,6 @@ GrayImage ImageProcessor::applyTone(const GrayImage &base, const ToneSettings &t
     return out;
 }
 
-std::vector<float> ImageProcessor::toLinear(const GrayImage &encoded)
-{
-    std::vector<float> linear(encoded.pixels.size());
-    std::transform(encoded.pixels.begin(), encoded.pixels.end(), linear.begin(),
-                   [](float v) { return srgbToLinear(v); });
-    return linear;
-}
-
 QImage ImageProcessor::toQImage(const GrayImage &encoded)
 {
     if (encoded.isNull())

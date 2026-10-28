@@ -31,8 +31,6 @@ namespace sa {
 class GreedyOptimizer final : public IOptimizer
 {
 public:
-    [[nodiscard]] std::string name() const override { return "greedy"; }
-
     [[nodiscard]] StringArtResult optimize(const OptimizationProblem &problem, const OptimizationConfig &config,
                                            std::stop_token stop = {}, const ProgressCallback &progress = {}) override;
 

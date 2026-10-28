@@ -70,10 +70,6 @@ public:
     [[nodiscard]] static RgbImage applyTone(const RgbImage &base, const ToneSettings &tone);
     [[nodiscard]] static QImage toQImage(const RgbImage &encoded);
 
-    // Converts display-encoded gray to linear-light values (the transmittance
-    // target used by the optimizer).
-    [[nodiscard]] static std::vector<float> toLinear(const GrayImage &encoded);
-
     // 8-bit preview of a display-encoded gray image.
     [[nodiscard]] static QImage toQImage(const GrayImage &encoded);
 

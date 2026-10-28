@@ -69,8 +69,6 @@ public:
     LayeredColorOptimizer(std::array<std::vector<float>, 3> target, std::vector<QColor> palette, QColor background,
                           LayeredColorSettings settings = {});
 
-    [[nodiscard]] std::string name() const override { return "layered-color"; }
-
     [[nodiscard]] StringArtResult optimize(const OptimizationProblem &problem, const OptimizationConfig &config,
                                            std::stop_token stop = {}, const ProgressCallback &progress = {}) override;
 
