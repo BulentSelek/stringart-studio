@@ -79,6 +79,7 @@ private slots:
     void colourProjectRoundTrip();
     void layeredWoundInBlocks();
     void layeredRefinementNeverWorse();
+    void layeredLengthLimit();
     void layerOrders();
     void colourSeparation();
     void layeredCancel();
@@ -389,6 +390,45 @@ void TestColor::layeredRefinementNeverWorse()
     const StringArtResult b =
         LayeredColorOptimizer(setup.target, palette, Qt::white, settings).optimize(setup.problem, config);
     QCOMPARE(a.colorSteps, b.colorSteps);
+}
+
+void TestColor::layeredLengthLimit()
+{
+    // A length limit that the first layers use up leaves nothing for the
+    // others, also while they are refined.
+    const ColorSetup setup = makeSetup(halvesWithDisk(128), 64, 60);
+    OptimizationConfig config;
+    config.maxSegments = 400;
+    config.minPinSeparation = 5;
+    const std::vector<std::vector<QColor>> palettes{{Qt::white, QColor(255, 0, 0)},
+                                                    {QColor(200, 30, 30), QColor(30, 40, 200), Qt::black}};
+    for (const std::vector<QColor> &palette : palettes) {
+        for (LayerOrder order : {LayerOrder::LightToDark, LayerOrder::DarkToLight, LayerOrder::Palette}) {
+            LayeredColorSettings settings;
+            settings.order = order;
+            // Also exactly the length of the first line: the limit is then used up.
+            config.maxThreadLengthMm = 0.0;
+            const ColorStep first = LayeredColorOptimizer(setup.target, palette, Qt::white, settings)
+                                        .optimize(setup.problem, config)
+                                        .colorSteps.front();
+            const double firstLength =
+                setup.problem.pins.distance(first.from, first.to) * setup.problem.pins.mmPerUnit();
+            for (double limit : {1.0, firstLength, 500.0, 3000.0}) {
+                config.maxThreadLengthMm = limit;
+                const StringArtResult result =
+                    LayeredColorOptimizer(setup.target, palette, Qt::white, settings).optimize(setup.problem, config);
+                verifyThreads(result, setup.problem.pins, config, static_cast<int>(palette.size()));
+                QVERIFY(result.threadLengthMm <= limit + 1e-6);
+                QVERIFY(result.finalError <= result.initialError);
+                const std::vector<float> rendered =
+                    ColorRenderer::renderRgb(setup.problem.pins, result.colorSteps, palette, Qt::white,
+                                             config.threadWidth, config.threadOpacity);
+                QCOMPARE(rendered.size(), result.rgb.size());
+                for (std::size_t i = 0; i < rendered.size(); ++i)
+                    QVERIFY(std::abs(rendered[i] - result.rgb[i]) < 1e-4f);
+            }
+        }
+    }
 }
 
 void TestColor::layerOrders()

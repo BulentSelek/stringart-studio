@@ -487,22 +487,19 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
             above(layers, index, pixels, scratchA, scratchB);
             const auto [otherSegments, otherLength] = totals(layers, index);
             const double limit = config.maxThreadLengthMm > 0.0 ? config.maxThreadLengthMm - otherLength : 0.0;
-            if (config.maxThreadLengthMm > 0.0 && limit <= 0.0) {
-                Layer none = layers[index];
-                none.sequence.clear();
-                none.transmittance.assign(pixels, 1.0f);
-                none.lengthMm = 0.0;
-                none.stopReason = StopReason::MaxThreadLength;
-                return none;
-            }
+            const bool noLength = config.maxThreadLengthMm > 0.0 && limit <= 0.0;
             const Layer &old = layers[index];
             // First build: the layer's share of the budget; refinement: any
-            // segments the other layers leave unused.
-            const int budget = flexible ? config.maxSegments - otherSegments : old.budget;
-            return buildLayer(shared, old.colour, old.k, budget, under, scratchA, scratchB, limit, out, stop,
-                              [&](int segments, double lengthMm, std::span<const float> rgb) {
-                                  report(otherSegments + segments, otherLength + lengthMm, rgb, false);
-                              });
+            // segments the other layers leave unused. An empty layer still
+            // fills `out` with the picture of the other layers.
+            const int budget = noLength ? 0 : flexible ? config.maxSegments - otherSegments : old.budget;
+            Layer layer = buildLayer(shared, old.colour, old.k, budget, under, scratchA, scratchB, limit, out, stop,
+                                     [&](int segments, double lengthMm, std::span<const float> rgb) {
+                                         report(otherSegments + segments, otherLength + lengthMm, rgb, false);
+                                     });
+            if (noLength)
+                layer.stopReason = StopReason::MaxThreadLength;
+            return layer;
         };
         // Bottom to top; layers above are still empty.
         for (std::size_t i = 0; i < layers.size() && !stop.stop_requested(); ++i)
