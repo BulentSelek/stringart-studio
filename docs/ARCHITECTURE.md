@@ -1,8 +1,9 @@
 # Architecture and Models
 
-Status: Phase 1 (functional MVP) and Phase 2 (quality improvements). This document describes what is implemented,
-the mathematical models, and the design decisions taken where the
-[specification](SPECIFICATION.md) left room for choice.
+Status: Phases 1–4 of the [specification](SPECIFICATION.md) are implemented,
+except the optional CUDA backend. This document describes what is
+implemented, the mathematical models, and the design decisions taken where
+the specification left room for choice.
 
 ## Modules
 
