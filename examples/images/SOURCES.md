@@ -3,6 +3,9 @@
 Small copies (at most 800 px, metadata removed) for trying the application
 and the command-line tool.
 
+These images are not covered by the project's GPL license; each keeps the
+license given below.
+
 | File | Work | Source | License |
 |---|---|---|---|
 | `mona-lisa.jpg` | Leonardo da Vinci, *Mona Lisa*, 1503–1506 (cropped to the face) | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Mona_Lisa,_by_Leonardo_da_Vinci,_from_C2RMF_retouched.jpg) | Public domain |

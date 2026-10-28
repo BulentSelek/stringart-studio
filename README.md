@@ -97,3 +97,15 @@ implementation: it shares no code, design or assets with 3Vial.
 - [Benchmarks](docs/BENCHMARKS.md): measured runtime, memory and error.
 - [Manual tests](docs/MANUAL_TESTS.md): checks that need a person.
 - [Specification](docs/SPECIFICATION.md): the original project brief.
+
+## License
+
+Copyright (C) 2026 Bulent Selek
+
+String Art Studio is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. See [LICENSE](LICENSE).
+
+The sample images in `examples/images` are not covered by this license; see
+[their sources](examples/images/SOURCES.md).
