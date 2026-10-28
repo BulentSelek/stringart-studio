@@ -25,10 +25,11 @@ void validateConfig(const OptimizationConfig &config, int pinCount);
 [[nodiscard]] int threadCount(const OptimizationConfig &config);
 
 // Threads for one candidate-scoring loop out of `available`. Automatic mode
-// uses at most kMaxSearchThreads: scoring is memory-bound and more threads
-// were no faster but used up to 3x the CPU time (docs/BENCHMARKS.md); an
-// explicit thread count is used as given.
+// uses at most kMaxSearchThreads when the lines are precomputed: scoring from
+// the line cache is memory-bound, and more threads were no faster but used up
+// to 3x the CPU time (docs/BENCHMARKS.md). Rasterizing on demand is
+// compute-bound and uses them all. An explicit thread count is used as given.
 inline constexpr int kMaxSearchThreads = 16;
-[[nodiscard]] int searchThreads(const OptimizationConfig &config, int available);
+[[nodiscard]] int searchThreads(const OptimizationConfig &config, int available, bool precomputedLines);
 
 } // namespace sa

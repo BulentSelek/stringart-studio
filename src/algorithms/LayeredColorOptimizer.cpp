@@ -366,11 +366,12 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
         return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     };
     const int available = threadCount(config);
-    const int threads = searchThreads(config, available);
     QThreadPool pool;
-    pool.setMaxThreadCount(threads);
+    pool.setMaxThreadCount(available);
     const LineCache cache(layout, config.threadWidth, problem.width, problem.height, config.minPinSeparation,
                           config.lineCacheBudgetBytes, &pool);
+    const int threads = searchThreads(config, available, cache.isPrecomputed());
+    pool.setMaxThreadCount(threads);
     const Shared shared{problem, config, m_target, cache, pool, threads, pixels};
 
     // Segment budgets from the colour separation.
@@ -526,8 +527,8 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
         outcomes[i].layers = run(orders[i], context, i == 0, outcomes[i].picture, outcomes[i].error);
     };
     if (orders.size() == 2 && available > 1) {
-        const int firstThreads = searchThreads(config, available - available / 2);
-        const int secondThreads = searchThreads(config, available / 2);
+        const int firstThreads = searchThreads(config, available - available / 2, cache.isPrecomputed());
+        const int secondThreads = searchThreads(config, available / 2, cache.isPrecomputed());
         QThreadPool secondPool;
         secondPool.setMaxThreadCount(secondThreads);
         pool.setMaxThreadCount(firstThreads);

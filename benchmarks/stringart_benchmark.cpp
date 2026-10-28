@@ -103,7 +103,6 @@ int main(int argc, char *argv[])
     config.threadWidth = 1.0;
     config.threadCount = parser.value(QStringLiteral("threads")).toInt();
     config.lineCacheBudgetBytes = parser.value(QStringLiteral("cache-mib")).toULongLong() * 1024 * 1024;
-    const int threads = sa::searchThreads(config, sa::threadCount(config));
 
     const Usage before = processUsage();
     const auto start = std::chrono::steady_clock::now();
@@ -114,6 +113,7 @@ int main(int argc, char *argv[])
 
     // CPU utilisation: CPU time / wall time / threads (100 % = all threads busy).
     const double cpu = after.cpuSeconds - before.cpuSeconds;
+    const int threads = sa::searchThreads(config, sa::threadCount(config), result.lineCachePrecomputed);
     std::printf("| %d | %d | %d | %d | %s %.0f MiB | %.2f | %.3f | %.0f %% of %d | %.0f | %.5f | %.5f | %s |\n", size, pins,
                 result.segmentCount(), threads, result.lineCachePrecomputed ? "precomputed" : "on demand",
                 result.lineCacheBytes / (1024.0 * 1024.0), wall, 1000.0 * wall / std::max(1, result.segmentCount()),

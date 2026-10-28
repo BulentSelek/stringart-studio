@@ -65,12 +65,12 @@ StringArtResult GreedyOptimizer::optimize(const OptimizationProblem &problem, co
         return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     };
 
-    const int threads = searchThreads(config, threadCount(config));
     QThreadPool pool;
-    pool.setMaxThreadCount(threads);
-
+    pool.setMaxThreadCount(threadCount(config));
     const LineCache cache(layout, config.threadWidth, problem.width, problem.height, config.minPinSeparation,
                           config.lineCacheBudgetBytes, &pool);
+    const int threads = searchThreads(config, threadCount(config), cache.isPrecomputed());
+    pool.setMaxThreadCount(threads);
 
     const double weightSum = std::accumulate(problem.weights.begin(), problem.weights.end(), 0.0);
     const double normalizer = weightSum > 0.0 ? 1.0 / weightSum : 0.0;

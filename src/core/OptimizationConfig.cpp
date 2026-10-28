@@ -33,9 +33,11 @@ int threadCount(const OptimizationConfig &config)
     return config.threadCount > 0 ? config.threadCount : std::max(1, QThread::idealThreadCount());
 }
 
-int searchThreads(const OptimizationConfig &config, int available)
+int searchThreads(const OptimizationConfig &config, int available, bool precomputedLines)
 {
-    return config.threadCount > 0 ? available : std::clamp(available, 1, kMaxSearchThreads);
+    if (config.threadCount > 0 || !precomputedLines)
+        return std::max(1, available);
+    return std::clamp(available, 1, kMaxSearchThreads);
 }
 
 } // namespace sa
