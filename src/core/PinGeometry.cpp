@@ -14,6 +14,14 @@ namespace {
 
 constexpr double kMargin = 1.0; // pins stay one pixel inside the canvas
 
+// Pixels per mm that fit a widthMm x heightMm frame inside the canvas margin.
+// One scale for both axes keeps the physical aspect ratio exact, whatever
+// rounding made the canvas; the frame is centred in any space left over.
+double fitScale(int canvasWidth, int canvasHeight, double widthMm, double heightMm)
+{
+    return std::min((canvasWidth - 2.0 * kMargin) / widthMm, (canvasHeight - 2.0 * kMargin) / heightMm);
+}
+
 double cross(const Vec2 &o, const Vec2 &a, const Vec2 &b)
 {
     return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
@@ -89,9 +97,10 @@ PinLayout PinLayout::elliptical(int pinCount, int canvasWidth, int canvasHeight,
     layout.m_canvasWidth = canvasWidth;
     layout.m_canvasHeight = canvasHeight;
     layout.m_center = {canvasWidth * 0.5, canvasHeight * 0.5};
-    const double rx = canvasWidth * 0.5 - kMargin;
-    const double ry = canvasHeight * 0.5 - kMargin;
-    layout.m_mmPerUnit = widthMm / (2.0 * rx);
+    const double unitsPerMm = fitScale(canvasWidth, canvasHeight, widthMm, heightMm);
+    const double rx = widthMm * unitsPerMm * 0.5;
+    const double ry = heightMm * unitsPerMm * 0.5;
+    layout.m_mmPerUnit = 1.0 / unitsPerMm;
 
     // Tabulate arc length over the parameter angle, then place pins at equal
     // arc-length steps (linear interpolation between samples).
@@ -132,11 +141,12 @@ PinLayout PinLayout::rectangular(int pinCount, int canvasWidth, int canvasHeight
     layout.m_canvasWidth = canvasWidth;
     layout.m_canvasHeight = canvasHeight;
     layout.m_center = {canvasWidth * 0.5, canvasHeight * 0.5};
-    const double x0 = kMargin;
-    const double y0 = kMargin;
-    const double w = canvasWidth - 2.0 * kMargin;
-    const double h = canvasHeight - 2.0 * kMargin;
-    layout.m_mmPerUnit = widthMm / w;
+    const double unitsPerMm = fitScale(canvasWidth, canvasHeight, widthMm, heightMm);
+    const double w = widthMm * unitsPerMm;
+    const double h = heightMm * unitsPerMm;
+    const double x0 = (canvasWidth - w) * 0.5;
+    const double y0 = (canvasHeight - h) * 0.5;
+    layout.m_mmPerUnit = 1.0 / unitsPerMm;
 
     const double perimeter = 2.0 * (w + h);
     layout.m_pins.reserve(pinCount);
@@ -195,8 +205,7 @@ PinLayout PinLayout::custom(const std::vector<Vec2> &pinsMm, int canvasWidth, in
     layout.m_canvasWidth = canvasWidth;
     layout.m_canvasHeight = canvasHeight;
     layout.m_center = {canvasWidth * 0.5, canvasHeight * 0.5};
-    const double unitsPerMm =
-        std::min((canvasWidth - 2.0 * kMargin) / spanX, (canvasHeight - 2.0 * kMargin) / spanY);
+    const double unitsPerMm = fitScale(canvasWidth, canvasHeight, spanX, spanY);
     layout.m_mmPerUnit = 1.0 / unitsPerMm;
     // Centre the pin set on the canvas.
     const double offsetX = (canvasWidth - spanX * unitsPerMm) * 0.5;

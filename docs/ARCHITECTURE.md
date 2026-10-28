@@ -53,7 +53,9 @@ Working-image continuous pixel coordinates: pixel `(x, y)` covers
 physical size or custom pins in mm) plus the working size (pixels on the long
 side) defines the canvas: square for circles, the frame's aspect ratio
 otherwise. Pins stay one pixel inside the canvas and are numbered clockwise
-along the perimeter. `PinLayout::mmPerUnit()` maps working units to mm.
+along the perimeter. Ellipses, rectangles and custom pins use one scale for
+both axes, the largest that fits, and are centred, so the pins span exactly
+the frame size in mm even when the canvas size had to be rounded. `PinLayout::mmPerUnit()` maps working units to mm.
 The UI offers the working size as *Effort* (Run page): Low 384 px, Medium
 512 px (default), High 1024 px; projects and the CLI (`--size`) may use any
 size, shown as *Custom*.

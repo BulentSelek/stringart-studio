@@ -33,6 +33,7 @@ private slots:
     void rectangularPins();
     void customPins();
     void canvasSizeFollowsAspect();
+    void physicalFrameSize();
     void reachableMask();
 };
 
@@ -318,6 +319,45 @@ void TestGeometry::canvasSizeFollowsAspect()
     frame.kind = PinLayoutKind::Rectangular;
     frame.heightMm = 0.0;
     QVERIFY_THROWS_EXCEPTION(std::invalid_argument, PinLayout::canvasSize(frame, 512));
+}
+
+void TestGeometry::physicalFrameSize()
+{
+    // The pins span exactly the frame size in mm, whatever the canvas rounding.
+    struct Case
+    {
+        PinLayoutKind kind;
+        double widthMm;
+        double heightMm;
+        int workingSize;
+    };
+    const Case cases[] = {{PinLayoutKind::Rectangular, 400, 600, 512}, {PinLayoutKind::Rectangular, 600, 400, 384},
+                          {PinLayoutKind::Rectangular, 50, 5000, 512},  {PinLayoutKind::Elliptical, 400, 600, 512},
+                          {PinLayoutKind::Elliptical, 333, 500, 384},   {PinLayoutKind::Elliptical, 5000, 50, 512}};
+    for (const Case &c : cases) {
+        FrameSpec frame;
+        frame.kind = c.kind;
+        frame.widthMm = c.widthMm;
+        frame.heightMm = c.heightMm;
+        frame.pinCount = 400;
+        const PinLayout layout = PinLayout::fromFrame(frame, c.workingSize);
+        double minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+        for (const Vec2 &p : layout.pins()) {
+            minX = std::min(minX, p.x);
+            maxX = std::max(maxX, p.x);
+            minY = std::min(minY, p.y);
+            maxY = std::max(maxY, p.y);
+            QVERIFY(p.x >= 0.0 && p.x <= layout.canvasWidth() && p.y >= 0.0 && p.y <= layout.canvasHeight());
+        }
+        const QString label = QStringLiteral("%1 x %2 mm at %3 px").arg(c.widthMm).arg(c.heightMm).arg(c.workingSize);
+        // Pins sit on the outline, so an ellipse's extreme pins can fall just short of it.
+        const double tolerance = c.kind == PinLayoutKind::Elliptical ? 0.002 : 1e-9;
+        QVERIFY2(std::abs((maxX - minX) * layout.mmPerUnit() / c.widthMm - 1.0) < tolerance, qPrintable(label));
+        QVERIFY2(std::abs((maxY - minY) * layout.mmPerUnit() / c.heightMm - 1.0) < tolerance, qPrintable(label));
+        // Centred on the canvas.
+        QVERIFY2(std::abs(minX + maxX - layout.canvasWidth()) < 0.05 * layout.canvasWidth(), qPrintable(label));
+        QVERIFY2(std::abs(minY + maxY - layout.canvasHeight()) < 0.05 * layout.canvasHeight(), qPrintable(label));
+    }
 }
 
 void TestGeometry::reachableMask()
