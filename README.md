@@ -82,6 +82,12 @@ Sample images to try are in [`examples/images`](examples/images/SOURCES.md).
 cd build && ctest --output-on-failure
 ```
 
+## Background
+
+I came across the 3Vial String Art project on Reddit and wanted to build my
+own version as open source. String Art Studio is an independent
+implementation: it shares no code, design or assets with 3Vial.
+
 ## Documentation
 
 - [Building and running](docs/BUILDING.md): every option, the UI workflow,

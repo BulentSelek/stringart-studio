@@ -2,13 +2,13 @@
 
 ## 1. Objective
 
-Develop a professional, cross-platform String Art generator inspired by the functionality of 3Vial String Art.
+Develop a professional, cross-platform String Art generator.
 
 The application must convert ordinary photographs into high-quality string art by optimizing the sequence of straight threads connecting predefined anchor points (pins/nails).
 
 This must be a fully functional application, not a proof of concept or UI mockup.
 
-The software must be independently implemented. Do not copy proprietary source code, branding, or UI assets from 3Vial.
+The software must be independently implemented. Do not copy proprietary source code, branding, or UI assets from other string art software.
 
 Prioritize:
 
