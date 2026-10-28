@@ -15,11 +15,12 @@ own photos.
 - [ ] Each file dialog reopens in the last folder used for that kind of file.
 
 ## Frame page (shape and placement together, *Original* view)
-- [ ] Circle / Ellipse / Rectangle change the yellow frame on the photo;
-      Ellipse / Rectangle side handles change the aspect and *Height (mm)*
-      follows.
-- [ ] Crop frame: drag to move, corner handle keeps the aspect, frame can
-      extend beyond the photo (white area), *Fit whole photo*, *Reset crop*.
+- [ ] Circle / Ellipse / Rectangle change the yellow frame on the photo.
+- [ ] Crop frame: drag inside to move; all four corner handles resize with
+      the opposite corner fixed (circle: aspect kept; ellipse / rectangle:
+      free); ellipse / rectangle also have handles on all four edges, and
+      *Height (mm)* follows the aspect. The frame can extend beyond the photo
+      (white area); *Fit whole photo*, *Reset crop*.
 - [ ] Rotation slider and ±90° buttons rotate the photo.
 - [ ] Custom: *Import CSV…* with a pin file (x, y in mm); invalid files show
       an error.

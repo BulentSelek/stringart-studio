@@ -29,6 +29,45 @@ Pane {
     // Darker than the side panels: the picture is the centre of attention.
     Material.background: "#141417"
 
+    // Resize handle of the crop frame at (hx, hy) in {0, 0.5, 1} of its box:
+    // corners always, edge midpoints only when the frame aspect is free.
+    component CropHandle: Rectangle {
+        id: handle
+        required property Item frame // the crop frame item (crop, resized(), commit())
+        required property real hx
+        required property real hy
+        readonly property bool corner: hx !== 0.5 && hy !== 0.5
+        readonly property alias pressed: handleArea.pressed
+        visible: corner || frame.freeAspect
+        width: corner ? 16 : (hx === 0.5 ? Math.min(48, parent.width / 3) : 10)
+        height: corner ? 16 : (hy === 0.5 ? Math.min(48, parent.height / 3) : 10)
+        x: hx * parent.width - width / 2
+        y: hy * parent.height - height / 2
+        radius: 3
+        color: Material.accent
+
+        MouseArea {
+            id: handleArea
+            anchors.fill: parent
+            anchors.margins: -6
+            cursorShape: !handle.corner ? (handle.hx === 0.5 ? Qt.SizeVerCursor : Qt.SizeHorCursor)
+                         : (handle.hx === handle.hy ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor)
+            property point start
+            property rect startCrop
+            onPressed: mouse => {
+                start = mapToItem(handle.frame, mouse.x, mouse.y)
+                startCrop = handle.frame.crop
+            }
+            onPositionChanged: mouse => {
+                const p = mapToItem(handle.frame, mouse.x, mouse.y)
+                handle.frame.crop = handle.frame.resized(startCrop, handle.hx, handle.hy,
+                                                         (p.x - start.x) / handle.frame.width,
+                                                         (p.y - start.y) / handle.frame.height)
+            }
+            onReleased: handle.frame.commit()
+        }
+    }
+
     // Frame outline through the pins (normalized canvas coordinates), with
     // the unreachable area outside the frame dimmed.
     component FrameOutline: Canvas {
@@ -401,8 +440,9 @@ Pane {
                             visible: tabs.currentIndex === root.originalTab && root.controller.hasImage
                                      && image.status === Image.Ready
                             enabled: !root.controller.running
-                            readonly property bool active: moveArea.pressed || resizeArea.pressed
-                                                           || rightArea.pressed || bottomArea.pressed
+                            readonly property bool active: moveArea.pressed || handles.some(h => h.pressed)
+                            readonly property var handles: [handleTL, handleT, handleTR, handleR, handleBR, handleB,
+                                                            handleBL, handleL]
                             readonly property bool freeAspect:
                                 root.controller.frameShape === ProjectController.Ellipse
                                 || root.controller.frameShape === ProjectController.Rectangle
@@ -422,6 +462,29 @@ Pane {
                                 }
                                 root.controller.crop = crop
                                 crop = Qt.binding(() => root.controller.effectiveCrop)
+                            }
+
+                            // Crop after dragging handle (hx, hy) by (dx, dy) (fractions of the
+                            // image) from `c`; the opposite side stays put. Corners keep the
+                            // frame aspect unless it is free. The crop may extend up to one
+                            // image size beyond every edge and stays at least 5 % large.
+                            function resized(c, hx, hy, dx, dy) {
+                                const minSize = 0.05
+                                let left = c.x, top = c.y, right = c.x + c.width, bottom = c.y + c.height
+                                if (hx === 0) left = Math.max(-1, Math.min(right - minSize, left + dx))
+                                if (hx === 1) right = Math.min(2, Math.max(left + minSize, right + dx))
+                                if (hy === 0) top = Math.max(-1, Math.min(bottom - minSize, top + dy))
+                                if (hy === 1) bottom = Math.min(2, Math.max(top + minSize, bottom + dy))
+                                if (freeAspect || hx === 0.5 || hy === 0.5)
+                                    return Qt.rect(left, top, right - left, bottom - top)
+                                // Fixed aspect: width from the pointer, height follows; the
+                                // corner opposite to the handle is the anchor.
+                                const a = normalizedAspect
+                                const maxHeight = hy === 1 ? 2 - c.y : c.y + c.height + 1
+                                const w = Math.max(minSize, Math.min(right - left, maxHeight * a))
+                                const h = w / a
+                                return Qt.rect(hx === 1 ? c.x : c.x + c.width - w,
+                                               hy === 1 ? c.y : c.y + c.height - h, w, h)
                             }
 
                             Rectangle {
@@ -463,80 +526,14 @@ Pane {
                                     onReleased: cropFrame.commit()
                                 }
 
-                                Rectangle {
-                                    width: 16
-                                    height: 16
-                                    radius: 3
-                                    color: Material.accent
-                                    anchors.right: parent.right
-                                    anchors.bottom: parent.bottom
-                                    anchors.margins: -8
-
-                                    MouseArea {
-                                        id: resizeArea
-                                        anchors.fill: parent
-                                        cursorShape: Qt.SizeFDiagCursor
-                                        onPositionChanged: mouse => {
-                                            const p = mapToItem(cropFrame, mouse.x, mouse.y)
-                                            const c = cropFrame.crop
-                                            const a = cropFrame.normalizedAspect
-                                            // Width from the pointer; the crop may extend up to one
-                                            // image size beyond the right and bottom edges.
-                                            let w = Math.max(0.05, p.x / cropFrame.width - c.x)
-                                            w = Math.min(w, 2 - c.x, (2 - c.y) * a)
-                                            cropFrame.crop = Qt.rect(c.x, c.y, w, w / a)
-                                        }
-                                        onReleased: cropFrame.commit()
-                                    }
-                                }
-
-                                Rectangle {
-                                    visible: cropFrame.freeAspect
-                                    width: 10
-                                    height: Math.min(48, parent.height / 3)
-                                    radius: 3
-                                    color: Material.accent
-                                    anchors.horizontalCenter: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-
-                                    MouseArea {
-                                        id: rightArea
-                                        anchors.fill: parent
-                                        anchors.margins: -6
-                                        cursorShape: Qt.SizeHorCursor
-                                        onPositionChanged: mouse => {
-                                            const p = mapToItem(cropFrame, mouse.x, mouse.y)
-                                            const c = cropFrame.crop
-                                            const w = Math.max(0.05, Math.min(2 - c.x, p.x / cropFrame.width - c.x))
-                                            cropFrame.crop = Qt.rect(c.x, c.y, w, c.height)
-                                        }
-                                        onReleased: cropFrame.commit()
-                                    }
-                                }
-
-                                Rectangle {
-                                    visible: cropFrame.freeAspect
-                                    width: Math.min(48, parent.width / 3)
-                                    height: 10
-                                    radius: 3
-                                    color: Material.accent
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    anchors.verticalCenter: parent.bottom
-
-                                    MouseArea {
-                                        id: bottomArea
-                                        anchors.fill: parent
-                                        anchors.margins: -6
-                                        cursorShape: Qt.SizeVerCursor
-                                        onPositionChanged: mouse => {
-                                            const p = mapToItem(cropFrame, mouse.x, mouse.y)
-                                            const c = cropFrame.crop
-                                            const h = Math.max(0.05, Math.min(2 - c.y, p.y / cropFrame.height - c.y))
-                                            cropFrame.crop = Qt.rect(c.x, c.y, c.width, h)
-                                        }
-                                        onReleased: cropFrame.commit()
-                                    }
-                                }
+                                CropHandle { id: handleTL; objectName: "cropHandle00"; frame: cropFrame; hx: 0; hy: 0 }
+                                CropHandle { id: handleT; objectName: "cropHandle50"; frame: cropFrame; hx: 0.5; hy: 0 }
+                                CropHandle { id: handleTR; objectName: "cropHandle10"; frame: cropFrame; hx: 1; hy: 0 }
+                                CropHandle { id: handleR; objectName: "cropHandle15"; frame: cropFrame; hx: 1; hy: 0.5 }
+                                CropHandle { id: handleBR; objectName: "cropHandle11"; frame: cropFrame; hx: 1; hy: 1 }
+                                CropHandle { id: handleB; objectName: "cropHandle51"; frame: cropFrame; hx: 0.5; hy: 1 }
+                                CropHandle { id: handleBL; objectName: "cropHandle01"; frame: cropFrame; hx: 0; hy: 1 }
+                                CropHandle { id: handleL; objectName: "cropHandle05"; frame: cropFrame; hx: 0; hy: 0.5 }
                             }
                         }
                     }

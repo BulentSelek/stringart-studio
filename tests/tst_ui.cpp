@@ -57,6 +57,7 @@ private slots:
     void paletteSuggestion();
     void threadDiameterInMillimetres();
     void effortLevels();
+    void cropHandles();
     void undoRedo();
     void presets();
     void runHistory();
@@ -722,6 +723,63 @@ void TestUi::paletteSuggestion()
     // Destroying the UI while a suggestion runs is safe.
     m_controller->suggestPalette(3);
     QVERIFY(m_controller->suggestingPalette());
+}
+
+void TestUi::cropHandles()
+{
+    QVERIFY(m_controller->loadImage(m_portrait));
+    findItem(QStringLiteral("categoryTabs"))->setProperty("currentIndex", 0); // Frame page: Original view
+    QQuickItem *topLeft = nullptr;
+    QTRY_VERIFY((topLeft = findItem(QStringLiteral("cropHandle00"))) && topLeft->isVisible());
+    // Circle: four corners, no edge handles.
+    for (const char *name : {"cropHandle10", "cropHandle11", "cropHandle01"})
+        QVERIFY(findItem(QString::fromLatin1(name))->isVisible());
+    QVERIFY(!findItem(QStringLiteral("cropHandle50"))->isVisible());
+
+    auto drag = [&](const QString &name, QPoint delta) {
+        QQuickItem *handle = findItem(name);
+        const QPoint from = handle->mapToScene(QPointF(handle->width() / 2, handle->height() / 2)).toPoint();
+        QTest::mousePress(m_window, Qt::LeftButton, {}, from);
+        for (int i = 1; i <= 5; ++i)
+            QTest::mouseMove(m_window, from + delta * i / 5);
+        QTest::mouseRelease(m_window, Qt::LeftButton, {}, from + delta);
+        QTest::qWait(150);
+    };
+    auto near = [](double a, double b) { return std::abs(a - b) < 0.02; };
+
+    // Top-left corner outward: the bottom-right corner stays, the aspect is kept.
+    QRectF before = m_controller->effectiveCrop();
+    drag(QStringLiteral("cropHandle00"), QPoint(-40, -40));
+    QRectF after = m_controller->effectiveCrop();
+    QVERIFY2(after.width() > before.width() + 0.02, qPrintable(QString::number(after.width())));
+    QVERIFY(near(after.right(), before.right()) && near(after.bottom(), before.bottom()));
+    QVERIFY(near(after.width() / after.height(), before.width() / before.height()));
+
+    // Ellipse: edge handles appear; the left edge moves only the left side and
+    // changes the frame aspect (height in mm follows).
+    m_controller->setProperty("frameShape", ProjectController::Ellipse);
+    QTRY_VERIFY(findItem(QStringLiteral("cropHandle05"))->isVisible());
+    QTest::qWait(150);
+    before = m_controller->effectiveCrop();
+    const double heightMm = m_controller->property("frameHeightMm").toDouble();
+    drag(QStringLiteral("cropHandle05"), QPoint(-60, 0));
+    after = m_controller->effectiveCrop();
+    QVERIFY(after.left() < before.left() - 0.02);
+    QVERIFY(near(after.right(), before.right()) && near(after.top(), before.top())
+            && near(after.bottom(), before.bottom()));
+    QVERIFY(m_controller->property("frameHeightMm").toDouble() < heightMm); // wider frame, same width in mm
+    // Top edge up: only the top moves.
+    before = after;
+    drag(QStringLiteral("cropHandle50"), QPoint(0, -50));
+    after = m_controller->effectiveCrop();
+    QVERIFY(after.top() < before.top() - 0.02);
+    QVERIFY(near(after.left(), before.left()) && near(after.bottom(), before.bottom()));
+    // Ellipse corners resize freely.
+    before = after;
+    drag(QStringLiteral("cropHandle10"), QPoint(30, -10));
+    after = m_controller->effectiveCrop();
+    QVERIFY(near(after.left(), before.left()) && near(after.bottom(), before.bottom()));
+    QVERIFY(after.right() > before.right() && after.top() < before.top());
 }
 
 void TestUi::effortLevels()
