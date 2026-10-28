@@ -27,6 +27,7 @@ src/
 │   └── ProjectFile.*          JSON project format, custom pin CSV import
 ├── algorithms/
 │   ├── IOptimizer.h           common optimizer interface
+│   ├── CandidateSearch.h      parallel best-line search shared by both optimizers
 │   ├── GreedyOptimizer.*      Algorithm A
 │   ├── LayeredColorOptimizer.* multi-colour threads wound in layers (Algorithm B: layer refinement)
 │   └── PaletteSuggester.*     thread colours from the image (multi-colour)
@@ -199,10 +200,14 @@ Complexity per iteration: `O(P · L)` with `P` valid candidates (≤ pin count)
 and `L` covered pixels per line (≈ length · (w + 1)). Memory: `O(W·H)` plus the
 optional line cache (8 bytes per covered pixel sample over all valid pairs).
 
-Parallelism: candidates are split into contiguous chunks scored on a
-`QThreadPool`; each candidate's score is computed sequentially and the
-reduction is deterministic, so results are identical for any thread count and
-for cached vs on-demand rasterization (tested).
+Parallelism: candidates are split into contiguous chunks of similar
+estimated work (`CandidateSearch`, shared with the colour optimizer) scored
+on a `QThreadPool`; small steps run on the calling thread. Each candidate's
+score is computed sequentially and the reduction is deterministic, so
+results are identical for any thread count and for cached vs on-demand
+rasterization (tested). Automatic mode uses at most 16 threads per scoring
+loop with a precomputed line cache (memory-bound) and all cores otherwise;
+see BENCHMARKS.md.
 
 Validation: tests compare the incremental `ΔS` against a full re-render +
 full error evaluation for every candidate, and compare a complete run against
@@ -247,7 +252,9 @@ completely before the next: the spool changes only between layers.
   the error drops (block coordinate descent, error never increases). The
   held-back half thus goes where it helps most, not by area.
 - Order: *Auto* builds light-to-dark and dark-to-light and keeps the better
-  one; light-to-dark, dark-to-light and palette order can be forced.
+  one (ties: light-to-dark); light-to-dark, dark-to-light and palette order
+  can be forced. The two orders run side by side, each with half of the
+  threads, since one scoring loop stops scaling before all cores are busy.
 
 The result is a list of steps `(colour, from pin, to pin)`, layer by layer;
 `ColorRenderer::renderRgb` of it reproduces the optimizer's picture
@@ -287,7 +294,10 @@ colour and run settings (UI: *From image … Suggest*; CLI: `--colors auto:N`).
    the candidate with the lowest error of a `LayeredColorOptimizer` run on a
    proxy (canvas 112 px, at most 120 pins, segments scaled to the same thread
    density, the run's layer order, one refinement pass), then one pass tries
-   to replace each chosen colour by every other candidate. This captures
+   to replace each chosen colour by every other candidate. The candidates
+   of one step are evaluated in parallel, one thread per proxy run (the
+   palettes of a swap step differ only in that slot, so they are
+   independent too; the result equals the sequential order). This captures
    mixtures, which clustering alone misses. Near-identical candidates are
    merged. The proxy needs the layer order and a refinement pass: without
    them it ranked palettes differently from the full run (it preferred two
@@ -302,6 +312,10 @@ Measured (CLI, 512 px, 200 pins, 3000 steps, synthetic images,
 | red / blue halves, black disk | 0.12571 | 0.11048 | black, red, blue | 4.7 s |
 | sunset gradient, dark disk | 0.05162 | 0.04705 | black, orange, yellow | 4.7 s |
 | colour plasma | 0.09488 | 0.09556 | black, dark blue, brown | 5.3 s |
+
+Suggestion times were measured with the candidates evaluated one after the
+other; evaluating them in parallel made the suggestion about 3× faster on
+`examples/images/mona-lisa.jpg` (14 s → 4.3 s for four colours).
 
 On the plasma image the suggestion is no better than the preset: on a white
 board darkening dominates the objective, so black does most of the work. A
