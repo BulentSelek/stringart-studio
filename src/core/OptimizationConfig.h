@@ -14,11 +14,17 @@ struct OptimizationConfig
     bool allowRepeatedLines = false;   // allow the same pin pair more than once
     int startPin = 0;
     double minImprovement = 0.0;       // stop when the best weighted SSE decrease is <= this
-    int threadCount = 0;               // candidate-evaluation threads, 0 = all cores
+    int threadCount = 0;               // candidate-evaluation threads, 0 = automatic
     std::size_t lineCacheBudgetBytes = std::size_t{1} << 30; // precompute lines if they fit
 };
 
 // Throws std::invalid_argument describing the first invalid field.
 void validateConfig(const OptimizationConfig &config, int pinCount);
+
+// Threads for candidate evaluation: config.threadCount, or for 0 all cores up
+// to kMaxAutoThreads. Scoring is memory-bound; beyond 16 threads runs were no
+// faster but used up to 3x the CPU time (docs/BENCHMARKS.md).
+inline constexpr int kMaxAutoThreads = 16;
+[[nodiscard]] int threadCount(const OptimizationConfig &config);
 
 } // namespace sa

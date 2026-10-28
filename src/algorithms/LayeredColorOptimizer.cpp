@@ -5,7 +5,6 @@
 #include "core/Compositing.h"
 #include "core/LineCache.h"
 
-#include <QThread>
 #include <QThreadPool>
 
 #include <algorithm>
@@ -365,7 +364,7 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
     auto elapsed = [&start] {
         return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     };
-    const int threads = config.threadCount > 0 ? config.threadCount : std::max(1, QThread::idealThreadCount());
+    const int threads = threadCount(config);
     QThreadPool pool;
     pool.setMaxThreadCount(threads);
     const LineCache cache(layout, config.threadWidth, problem.width, problem.height, config.minPinSeparation,

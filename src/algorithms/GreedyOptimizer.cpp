@@ -4,7 +4,6 @@
 #include "core/Compositing.h"
 #include "core/LineCache.h"
 
-#include <QThread>
 #include <QThreadPool>
 
 #include <algorithm>
@@ -66,7 +65,7 @@ StringArtResult GreedyOptimizer::optimize(const OptimizationProblem &problem, co
         return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     };
 
-    const int threads = config.threadCount > 0 ? config.threadCount : std::max(1, QThread::idealThreadCount());
+    const int threads = threadCount(config);
     QThreadPool pool;
     pool.setMaxThreadCount(threads);
 

@@ -6,7 +6,6 @@
 #include <QCommandLineParser>
 #include <QGuiApplication>
 #include <QImageReader>
-#include <QThread>
 
 #include <chrono>
 #include <cstdio>
@@ -65,7 +64,7 @@ int main(int argc, char *argv[])
         {QStringLiteral("size"), QStringLiteral("Working resolution."), QStringLiteral("px"), QStringLiteral("512")},
         {QStringLiteral("pins"), QStringLiteral("Pin count."), QStringLiteral("n"), QStringLiteral("200")},
         {QStringLiteral("segments"), QStringLiteral("Maximum segments."), QStringLiteral("n"), QStringLiteral("4000")},
-        {QStringLiteral("threads"), QStringLiteral("Threads (0 = all)."), QStringLiteral("n"), QStringLiteral("0")},
+        {QStringLiteral("threads"), QStringLiteral("Threads (0 = all cores, at most 16)."), QStringLiteral("n"), QStringLiteral("0")},
         {QStringLiteral("cache-mib"), QStringLiteral("Line cache budget in MiB."), QStringLiteral("n"), QStringLiteral("1024")},
         {QStringLiteral("image"), QStringLiteral("Input image (default: synthetic portrait)."), QStringLiteral("path")},
         {QStringLiteral("header"), QStringLiteral("Print the table header and exit.")},
@@ -104,7 +103,7 @@ int main(int argc, char *argv[])
     config.threadWidth = 1.0;
     config.threadCount = parser.value(QStringLiteral("threads")).toInt();
     config.lineCacheBudgetBytes = parser.value(QStringLiteral("cache-mib")).toULongLong() * 1024 * 1024;
-    const int threads = config.threadCount > 0 ? config.threadCount : QThread::idealThreadCount();
+    const int threads = sa::threadCount(config);
 
     const Usage before = processUsage();
     const auto start = std::chrono::steady_clock::now();

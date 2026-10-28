@@ -1,5 +1,8 @@
 #include "core/OptimizationConfig.h"
 
+#include <QThread>
+
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -23,6 +26,13 @@ void validateConfig(const OptimizationConfig &config, int pinCount)
         throw std::invalid_argument("minImprovement must be finite");
     if (config.threadCount < 0)
         throw std::invalid_argument("threadCount must not be negative");
+}
+
+int threadCount(const OptimizationConfig &config)
+{
+    if (config.threadCount > 0)
+        return config.threadCount;
+    return std::clamp(QThread::idealThreadCount(), 1, kMaxAutoThreads);
 }
 
 } // namespace sa
