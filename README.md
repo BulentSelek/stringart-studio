@@ -6,8 +6,8 @@ finished piece will look, and helps you wind the real thing.
 
 ![Original, single-colour and four-colour result](docs/images/example.jpg)
 
-*Mona Lisa: original, black thread (300 pins, 4000 segments), four colours
-suggested from the image (8000 segments).*
+*`examples/images/mona-lisa.jpg`: original, black thread (300 pins, 4000
+segments), four colours suggested from the image (8000 segments).*
 
 Desktop application (C++20, Qt 6 / QML) and command-line tool, running on
 the CPU with all cores.
@@ -67,11 +67,14 @@ Tested on Linux with GCC 16 and Qt 6.12.
 ## Command line
 
 ```bash
-./build/src/cli/stringart-cli portrait.jpg --pins 240 --segments 4000 \
+./build/src/cli/stringart-cli examples/images/mona-lisa.jpg --pins 300 --segments 4000 \
     --png out.png --csv out.csv
-./build/src/cli/stringart-cli photo.jpg --colors auto:4 --segments 8000 --png colour.png
+./build/src/cli/stringart-cli examples/images/mona-lisa.jpg --pins 300 --segments 8000 \
+    --colors auto:4 --png colour.png
 ./build/src/cli/stringart-cli --help
 ```
+
+Sample images to try are in [`examples/images`](examples/images/SOURCES.md).
 
 ## Tests
 
