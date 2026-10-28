@@ -12,6 +12,9 @@ suggested from the image (8000 segments).*
 Desktop application (C++20, Qt 6 / QML) and command-line tool, running on
 the CPU with all cores.
 
+![Placing the frame, a single-colour run, error map, playback, a suggested
+palette, a multi-colour run, run comparison and winding mode](docs/images/demo.gif)
+
 ## Features
 
 **Frame and image**
