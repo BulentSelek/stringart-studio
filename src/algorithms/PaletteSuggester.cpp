@@ -6,9 +6,14 @@
 #include "core/ImageProcessor.h"
 #include "core/OptimizationProblem.h"
 
+#include <QThreadPool>
+#include <QtConcurrent/QtConcurrentMap>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <mutex>
+#include <numeric>
 #include <random>
 #include <stdexcept>
 
@@ -268,7 +273,11 @@ std::vector<QColor> PaletteSuggester::suggest(const RgbImage &image, const Frame
     proxyConfig.minPinSeparation = std::min(proxyConfig.minPinSeparation, proxyPins / 2);
     proxyConfig.startPin = 0;
     proxyConfig.maxThreadLengthMm = 0.0;
+    // Proxy runs are small: one thread each, several runs side by side.
+    proxyConfig.threadCount = 1;
     validateConfig(proxyConfig, proxyPins);
+    QThreadPool threads;
+    threads.setMaxThreadCount(threadCount(config));
 
     const std::vector<QColor> pool = candidates(target, problem.weights, count, background, settings);
     const int picks = std::min<int>(count, static_cast<int>(pool.size()));
@@ -277,19 +286,27 @@ std::vector<QColor> PaletteSuggester::suggest(const RgbImage &image, const Frame
     for (int slot = 0; slot < picks; ++slot)
         total += poolSize - slot;            // forward selection
     int done = 0;
-    auto evaluate = [&](const std::vector<QColor> &palette) {
-        // Layered as in the real run and with its layer order (it decides which
-        // palette wins); one refinement pass for speed. Without refinement the
-        // proxy misranks palettes: the held-back budget is what lets small dark
-        // areas get their threads.
-        LayeredColorSettings layered;
-        layered.order = order;
-        layered.refinePasses = 1;
-        LayeredColorOptimizer optimizer(target, palette, background, layered);
-        const double error = optimizer.optimize(problem, proxyConfig, stop).finalError;
-        if (progress)
-            progress(++done, total);
-        return error;
+    std::mutex progressMutex;
+    // Errors of the palettes, evaluated in parallel. Layered as in the real run
+    // and with its layer order (it decides which palette wins); one refinement
+    // pass for speed. Without refinement the proxy misranks palettes: the
+    // held-back budget is what lets small dark areas get their threads.
+    auto evaluate = [&](const std::vector<std::vector<QColor>> &palettes) {
+        std::vector<double> errors(palettes.size());
+        std::vector<std::size_t> indices(palettes.size());
+        std::iota(indices.begin(), indices.end(), std::size_t{0});
+        QtConcurrent::blockingMap(&threads, indices, [&](std::size_t i) {
+            LayeredColorSettings layered;
+            layered.order = order;
+            layered.refinePasses = 1;
+            LayeredColorOptimizer optimizer(target, palettes[i], background, layered);
+            errors[i] = optimizer.optimize(problem, proxyConfig, stop).finalError;
+            if (progress) {
+                const std::lock_guard lock(progressMutex);
+                progress(++done, total);
+            }
+        });
+        return errors;
     };
     auto contains = [](const std::vector<QColor> &palette, const QColor &c) {
         return std::find(palette.begin(), palette.end(), c) != palette.end();
@@ -299,40 +316,41 @@ std::vector<QColor> PaletteSuggester::suggest(const RgbImage &image, const Frame
     std::vector<QColor> chosen;
     double chosenError = std::numeric_limits<double>::max();
     for (int slot = 0; slot < picks; ++slot) {
-        double bestError = std::numeric_limits<double>::max();
-        QColor best;
+        std::vector<std::vector<QColor>> palettes;
         for (const QColor &candidate : pool) {
             if (contains(chosen, candidate))
                 continue;
-            if (stop.stop_requested())
-                return chosen;
-            std::vector<QColor> palette = chosen;
-            palette.push_back(candidate);
-            const double error = evaluate(palette);
-            if (error < bestError) { // ties: earlier candidate
-                bestError = error;
-                best = candidate;
-            }
+            palettes.push_back(chosen);
+            palettes.back().push_back(candidate);
         }
-        chosen.push_back(best);
-        chosenError = bestError;
+        const std::vector<double> errors = evaluate(palettes);
+        if (stop.stop_requested())
+            return chosen;
+        // Ties: earlier candidate.
+        const auto best = static_cast<std::size_t>(std::min_element(errors.begin(), errors.end()) - errors.begin());
+        chosen = palettes[best];
+        chosenError = errors[best];
     }
 
     // One swap pass: an early pick (often black, which explains every dark
-    // colour a little) can block a better combination of later colours.
+    // colour a little) can block a better combination of later colours. The
+    // palettes of one slot differ from `chosen` only in that slot, so they
+    // can be evaluated together; the first one with the lowest error wins.
     for (int slot = 0; slot < picks; ++slot) {
-        const std::vector<QColor> before = chosen; // only chosen[slot] changes in this loop
+        std::vector<std::vector<QColor>> palettes;
         for (const QColor &candidate : pool) {
-            if (contains(before, candidate))
+            if (contains(chosen, candidate))
                 continue;
-            if (stop.stop_requested())
-                return chosen;
-            std::vector<QColor> palette = chosen;
-            palette[static_cast<std::size_t>(slot)] = candidate;
-            const double error = evaluate(palette);
-            if (error < chosenError) {
-                chosenError = error;
-                chosen = std::move(palette);
+            palettes.push_back(chosen);
+            palettes.back()[static_cast<std::size_t>(slot)] = candidate;
+        }
+        const std::vector<double> errors = evaluate(palettes);
+        if (stop.stop_requested())
+            return chosen;
+        for (std::size_t i = 0; i < palettes.size(); ++i) {
+            if (errors[i] < chosenError) {
+                chosenError = errors[i];
+                chosen = palettes[i];
             }
         }
     }

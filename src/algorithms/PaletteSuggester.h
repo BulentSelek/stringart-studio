@@ -65,7 +65,7 @@ public:
                                                         const QColor &background,
                                                         const PaletteSuggestionSettings &settings = {});
 
-    // (evaluated, total) proxy runs.
+    // (evaluated, total) proxy runs; called from worker threads, one call at a time.
     using Progress = std::function<void(int, int)>;
 
     // `image`: the processed colour target at any resolution (padding already
