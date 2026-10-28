@@ -89,18 +89,58 @@ Pane {
             Layout.fillWidth: true
             spacing: 8
 
-            TabBar {
+            // What the centre shows. Deliberately not tabs: rounded "chips"
+            // after a "View" label, so they are not mistaken for the
+            // parameter pages on the left.
+            Label {
+                text: qsTr("View")
+                font.capitalization: Font.AllUppercase
+                font.pixelSize: 12
+                font.bold: true
+                opacity: 0.6
+                Layout.leftMargin: 12
+            }
+            RowLayout {
                 id: tabs
                 objectName: "viewTabs"
-                // Natural tab widths (TabBar otherwise shares its width equally and elides).
-                currentIndex: 0
-                TabButton { text: qsTr("Original"); width: implicitWidth }
-                TabButton { text: qsTr("Processed"); width: implicitWidth }
-                TabButton { text: qsTr("String art"); width: implicitWidth }
-                TabButton {
-                    width: implicitWidth
-                    text: root.controller.runHistory.length > 0
-                          ? qsTr("Runs (%1)").arg(root.controller.runHistory.length) : qsTr("Runs")
+                property int currentIndex: 0
+                spacing: 4
+                Layout.topMargin: 4
+                Layout.bottomMargin: 4
+
+                Repeater {
+                    model: [qsTr("Original"), qsTr("Processed"), qsTr("String art"),
+                            root.controller.runHistory.length > 0
+                            ? qsTr("Runs (%1)").arg(root.controller.runHistory.length) : qsTr("Runs")]
+                    delegate: Button {
+                        id: chip
+                        required property string modelData
+                        required property int index
+                        objectName: "viewChip" + index
+                        text: modelData
+                        checkable: true
+                        checked: tabs.currentIndex === index
+                        topInset: 0
+                        bottomInset: 0
+                        leftPadding: 14
+                        rightPadding: 14
+                        contentItem: Label {
+                            text: chip.text
+                            font: chip.font
+                            color: chip.checked ? "#202020" : chip.Material.foreground
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            implicitHeight: 30
+                            radius: height / 2
+                            color: chip.checked ? chip.Material.accent
+                                                : chip.hovered ? "#20ffffff" : "transparent"
+                            border.color: chip.checked ? chip.Material.accent : "#50ffffff"
+                            border.width: 1
+                        }
+                        onClicked: tabs.currentIndex = index
+                    }
                 }
 
                 Connections {
