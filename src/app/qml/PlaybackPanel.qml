@@ -19,7 +19,9 @@ Pane {
     signal viewRequested()
     signal exportFrameRequested()
 
-    Material.elevation: 2
+    // Side panels and the toolbar share one colour. Set on the background
+    // only: an inherited Material.background would fill flat buttons.
+    background: Rectangle { color: "#26262b" }
     padding: 8
     enabled: root.controller.hasResult && !root.controller.running
 

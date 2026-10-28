@@ -26,7 +26,8 @@ Pane {
     readonly property bool showCompare: root.resultModeActive && resultMode.currentIndex === 2
 
     padding: 0
-    Material.background: "#1b1b1f"
+    // Darker than the side panels: the picture is the centre of attention.
+    Material.background: "#141417"
 
     // Frame outline through the pins (normalized canvas coordinates), with
     // the unreachable area outside the frame dimmed.
@@ -89,22 +90,14 @@ Pane {
             Layout.fillWidth: true
             spacing: 8
 
-            // What the centre shows. Deliberately not tabs: rounded "chips"
-            // after a "View" label, so they are not mistaken for the
-            // parameter pages on the left.
-            Label {
-                text: qsTr("View")
-                font.capitalization: Font.AllUppercase
-                font.pixelSize: 12
-                font.bold: true
-                opacity: 0.6
-                Layout.leftMargin: 12
-            }
+            // What the centre shows. Deliberately not tabs but rounded chips,
+            // so they are not mistaken for the parameter pages on the left.
             RowLayout {
                 id: tabs
                 objectName: "viewTabs"
                 property int currentIndex: 0
                 spacing: 4
+                Layout.leftMargin: 12
                 Layout.topMargin: 4
                 Layout.bottomMargin: 4
 

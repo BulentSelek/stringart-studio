@@ -19,7 +19,9 @@ Pane {
     signal exportTemplateRequested(int paper)
     signal exportGuideRequested()
 
-    Material.elevation: 2
+    // Side panels and the toolbar share one colour. Set on the background
+    // only: an inherited Material.background would fill flat buttons.
+    background: Rectangle { color: "#26262b" }
 
     component Stat: RowLayout {
         id: stat

@@ -25,7 +25,9 @@ Pane {
 
     signal importPinsRequested()
 
-    Material.elevation: 2
+    // Side panels and the toolbar share one colour. Set on the background
+    // only: an inherited Material.background would fill flat buttons.
+    background: Rectangle { color: "#26262b" }
     padding: 0
 
     component SectionLabel: Label {

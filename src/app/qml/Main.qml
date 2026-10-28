@@ -174,6 +174,11 @@ ApplicationWindow {
                     imagePanel.showView(imagePanel.processedTab)
             }
         }
+        Rectangle {
+            implicitWidth: 1
+            Layout.fillHeight: true
+            color: "#3c3c44"
+        }
 
         ColumnLayout {
             Layout.fillWidth: true
@@ -188,6 +193,12 @@ ApplicationWindow {
                 Layout.fillHeight: true
             }
 
+            Rectangle {
+                implicitHeight: 1
+                Layout.fillWidth: true
+                visible: playbackPanel.visible
+                color: "#3c3c44"
+            }
             PlaybackPanel {
                 id: playbackPanel
                 controller: window.controller
@@ -196,6 +207,11 @@ ApplicationWindow {
                 onViewRequested: imagePanel.showView(imagePanel.resultTab)
                 onExportFrameRequested: frameDialog.open()
             }
+        }
+        Rectangle {
+            implicitWidth: 1
+            Layout.fillHeight: true
+            color: "#3c3c44"
         }
 
         ProgressPanel {
