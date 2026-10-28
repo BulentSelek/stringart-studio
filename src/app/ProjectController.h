@@ -300,6 +300,7 @@ private:
     void updateProcessed();
     void updateResultImages();
     void clearResult();
+    void dropPaletteSuggestion();
     void onWorkerProgress();
     void onWorkerFinished(bool success);
     void setStatus(const QString &text);
@@ -396,6 +397,7 @@ private:
     bool m_suggestingPalette = false;
     double m_suggestionProgress = 0.0;
     std::stop_source m_suggestionStop;
+    bool m_suggestionSuperseded = false; // the image changed while searching
     QFuture<void> m_suggestion;
 
     struct RunRecord

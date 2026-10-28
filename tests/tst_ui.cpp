@@ -720,6 +720,15 @@ void TestUi::paletteSuggestion()
     QTRY_VERIFY_WITH_TIMEOUT(!m_controller->suggestingPalette(), 30000);
     QCOMPARE(m_controller->palette(), palette);
 
+    // Loading another image drops a running suggestion silently.
+    m_controller->suggestPalette(3);
+    QVERIFY(m_controller->suggestingPalette());
+    QVERIFY(m_controller->loadImage(m_portrait));
+    const QString loaded = m_controller->statusText();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->suggestingPalette(), 30000);
+    QCOMPARE(m_controller->palette(), palette);
+    QCOMPARE(m_controller->statusText(), loaded);
+
     // Destroying the UI while a suggestion runs is safe.
     m_controller->suggestPalette(3);
     QVERIFY(m_controller->suggestingPalette());

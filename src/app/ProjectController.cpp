@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <exception>
 #include <span>
+#include <utility>
 
 namespace {
 
@@ -297,6 +298,7 @@ bool ProjectController::loadImage(const QUrl &url)
         setStatus(tr("Cannot open %1: %2").arg(QFileInfo(path).fileName(), error));
         return false;
     }
+    dropPaletteSuggestion();
     const QSize size = image.size();
     m_crop = QRectF();
     m_rotation = 0.0;
@@ -445,9 +447,12 @@ void ProjectController::suggestPalette(int count)
     m_suggestion = QFuture<void>(task);
     task.then(this, [this, count, background](const Outcome &outcome) {
             const bool cancelled = m_suggestionStop.stop_requested();
+            const bool superseded = std::exchange(m_suggestionSuperseded, false);
             m_suggestingPalette = false;
             emit suggestionChanged();
-            if (!outcome.failure.isEmpty()) {
+            if (superseded) {
+                return;
+            } else if (!outcome.failure.isEmpty()) {
                 setStatus(tr("Palette suggestion failed: %1").arg(outcome.failure));
             } else if (cancelled) {
                 setStatus(tr("Palette suggestion cancelled."));
@@ -468,6 +473,16 @@ void ProjectController::cancelPaletteSuggestion()
 {
     if (m_suggestingPalette)
         m_suggestionStop.request_stop();
+}
+
+// A suggestion for the previous image must not reach the new one: stop it and
+// let it finish silently.
+void ProjectController::dropPaletteSuggestion()
+{
+    if (!m_suggestingPalette)
+        return;
+    m_suggestionSuperseded = true;
+    m_suggestionStop.request_stop();
 }
 
 void ProjectController::scheduleBaseUpdate()
@@ -1391,6 +1406,7 @@ bool ProjectController::openProject(const QUrl &url)
     if (image.isNull())
         imageNote = tr(" The input image is not available.");
 
+    dropPaletteSuggestion();
     clearResult();
     applySettings(project);
     if (image.isNull()) {
