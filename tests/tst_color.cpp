@@ -80,6 +80,7 @@ private slots:
     void layeredWoundInBlocks();
     void layeredRefinementNeverWorse();
     void layeredLengthLimit();
+    void layeredSegmentLimit();
     void layerOrders();
     void colourSeparation();
     void layeredCancel();
@@ -427,6 +428,26 @@ void TestColor::layeredLengthLimit()
                 for (std::size_t i = 0; i < rendered.size(); ++i)
                     QVERIFY(std::abs(rendered[i] - result.rgb[i]) < 1e-4f);
             }
+        }
+    }
+}
+
+void TestColor::layeredSegmentLimit()
+{
+    // The per-colour budgets never add up to more than maxSegments.
+    const ColorSetup setup = makeSetup(halvesWithDisk(128), 64, 60);
+    OptimizationConfig config;
+    config.minPinSeparation = 5;
+    const std::vector<QColor> palette{QColor(200, 30, 30), QColor(30, 40, 200), Qt::black};
+    for (int passes : {0, 2}) {
+        for (int segments : {1, 2, 3, 5, 50}) {
+            config.maxSegments = segments;
+            LayeredColorSettings settings;
+            settings.refinePasses = passes;
+            const StringArtResult result =
+                LayeredColorOptimizer(setup.target, palette, Qt::white, settings).optimize(setup.problem, config);
+            QVERIFY2(static_cast<int>(result.colorSteps.size()) <= segments,
+                     qPrintable(QStringLiteral("%1 > %2").arg(result.colorSteps.size()).arg(segments)));
         }
     }
 }

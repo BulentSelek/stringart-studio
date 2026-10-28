@@ -419,13 +419,22 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
         for (std::size_t p = 0; p < pixels; ++p)
             mass[c] += problem.weights[p] > 0.0f ? density[c][p] : 0.0f;
     }
+    // maxSegments split by mass (largest remainder, so the budgets add up to it).
     const double totalMass = std::accumulate(mass.begin(), mass.end(), 0.0);
-    auto budgetOf = [&](int colour) {
-        if (totalMass <= 0.0)
-            return 0;
-        const double share = mass[static_cast<std::size_t>(colour)] / totalMass;
-        return static_cast<int>(std::lround(config.maxSegments * share));
-    };
+    std::vector<int> budgets(m_palette.size(), 0);
+    if (totalMass > 0.0) {
+        std::vector<std::pair<double, std::size_t>> remainders;
+        int assigned = 0;
+        for (std::size_t c = 0; c < m_palette.size(); ++c) {
+            const double exact = config.maxSegments * mass[c] / totalMass;
+            budgets[c] = static_cast<int>(std::floor(exact));
+            assigned += budgets[c];
+            remainders.emplace_back(-(exact - budgets[c]), c);
+        }
+        std::sort(remainders.begin(), remainders.end());
+        for (std::size_t i = 0; i < remainders.size() && assigned < config.maxSegments; ++i, ++assigned)
+            ++budgets[remainders[i].second];
+    }
 
     const double weightSum = std::accumulate(problem.weights.begin(), problem.weights.end(), 0.0);
     const double normalizer = weightSum > 0.0 ? 1.0 / (3.0 * weightSum) : 0.0;
@@ -478,7 +487,7 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
             layer.k = toLinearRgb(m_palette[static_cast<std::size_t>(colour)]);
             // Without refinement nothing would use a held-back share.
             const double share = refinePasses > 0 ? m_settings.initialShare : 1.0;
-            layer.budget = static_cast<int>(std::lround(share * budgetOf(colour)));
+            layer.budget = static_cast<int>(std::lround(share * budgets[static_cast<std::size_t>(colour)]));
             layer.transmittance.assign(pixels, 1.0f);
             layers.push_back(std::move(layer));
         }
