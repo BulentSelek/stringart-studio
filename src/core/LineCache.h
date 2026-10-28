@@ -26,6 +26,8 @@ public:
 
     [[nodiscard]] bool isPrecomputed() const noexcept { return m_precomputed; }
     [[nodiscard]] std::size_t memoryBytes() const noexcept { return m_bytes; }
+    // Not computed beyond the budget: when isPrecomputed() is false, only
+    // known to exceed budgetBytes.
     [[nodiscard]] std::size_t estimatedBytes() const noexcept { return m_estimatedBytes; }
 
     // Samples of the line between pins a and b (order irrelevant). The span
@@ -33,7 +35,13 @@ public:
     [[nodiscard]] std::span<const LineSample> line(int a, int b, std::vector<LineSample> &scratch) const;
 
 private:
-    [[nodiscard]] std::size_t pairIndex(int a, int b) const noexcept;
+    // Lines from pin a to every pin b > a: samples of b in
+    // [offsets[b - a - 1], offsets[b - a]).
+    struct Row
+    {
+        std::vector<std::size_t> offsets;
+        std::vector<LineSample> samples;
+    };
 
     const PinLayout &m_layout;
     double m_width;
@@ -42,8 +50,7 @@ private:
     bool m_precomputed = false;
     std::size_t m_bytes = 0;
     std::size_t m_estimatedBytes = 0;
-    std::vector<std::size_t> m_offsets; // pairIndex -> [offsets[i], offsets[i + 1])
-    std::vector<LineSample> m_samples;
+    std::vector<Row> m_rows;
 };
 
 } // namespace sa

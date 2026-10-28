@@ -17,9 +17,11 @@ LineCache::LineCache(const PinLayout &layout, double threadWidth, int imageWidth
     const int n = layout.pinCount();
 
     // Upper bound on samples per line: one run of pixels per major-axis step,
-    // each run spanning at most width / cos + 2 pixels.
+    // each run spanning at most width / cos + 2 pixels. Stops as soon as the
+    // estimate exceeds the budget.
+    const std::size_t budgetSamples = budgetBytes / sizeof(LineSample);
     std::size_t estimatedSamples = 0;
-    for (int a = 0; a < n; ++a) {
+    for (int a = 0; a < n && estimatedSamples <= budgetSamples; ++a) {
         for (int b = a + 1; b < n; ++b) {
             if (layout.separation(a, b) < minSeparation || !layout.canConnect(a, b))
                 continue;
@@ -34,67 +36,44 @@ LineCache::LineCache(const PinLayout &layout, double threadWidth, int imageWidth
     if (m_estimatedBytes > budgetBytes)
         return;
 
-    // Rasterize each source pin's row of pairs in parallel, then flatten.
+    // Rasterize each source pin's row of pairs in parallel. Rows stay separate
+    // buffers: copying them into one would need twice the memory at the end.
     std::vector<int> rows(static_cast<std::size_t>(n));
     std::iota(rows.begin(), rows.end(), 0);
-    std::vector<std::vector<LineSample>> rowSamples(static_cast<std::size_t>(n));
-    std::vector<std::vector<std::size_t>> rowCounts(static_cast<std::size_t>(n));
+    m_rows.resize(static_cast<std::size_t>(n));
     auto rasterizeRow = [&](int a) {
         std::vector<LineSample> scratch;
-        auto &samples = rowSamples[static_cast<std::size_t>(a)];
-        auto &counts = rowCounts[static_cast<std::size_t>(a)];
-        counts.assign(static_cast<std::size_t>(n - a - 1), 0);
+        Row &row = m_rows[static_cast<std::size_t>(a)];
+        row.offsets.assign(static_cast<std::size_t>(n - a), 0);
         for (int b = a + 1; b < n; ++b) {
-            if (layout.separation(a, b) < minSeparation || !layout.canConnect(a, b))
-                continue;
-            rasterizePinLine(layout, a, b, threadWidth, imageWidth, imageHeight, scratch);
-            samples.insert(samples.end(), scratch.begin(), scratch.end());
-            counts[static_cast<std::size_t>(b - a - 1)] = scratch.size();
+            if (layout.separation(a, b) >= minSeparation && layout.canConnect(a, b)) {
+                rasterizePinLine(layout, a, b, threadWidth, imageWidth, imageHeight, scratch);
+                row.samples.insert(row.samples.end(), scratch.begin(), scratch.end());
+            }
+            row.offsets[static_cast<std::size_t>(b - a)] = row.samples.size();
         }
+        row.samples.shrink_to_fit();
     };
     if (pool)
         QtConcurrent::blockingMap(pool, rows, rasterizeRow);
     else
         std::for_each(rows.begin(), rows.end(), rasterizeRow);
 
-    const std::size_t pairCount = static_cast<std::size_t>(n) * static_cast<std::size_t>(n - 1) / 2;
-    m_offsets.assign(pairCount + 1, 0);
-    std::size_t total = 0;
-    std::size_t pair = 0;
-    for (int a = 0; a < n; ++a) {
-        for (std::size_t count : rowCounts[static_cast<std::size_t>(a)]) {
-            m_offsets[pair++] = total;
-            total += count;
-        }
-    }
-    m_offsets[pairCount] = total;
-
-    m_samples.reserve(total);
-    for (auto &samples : rowSamples) {
-        m_samples.insert(m_samples.end(), samples.begin(), samples.end());
-        std::vector<LineSample>().swap(samples);
-    }
-    m_bytes = m_samples.capacity() * sizeof(LineSample) + m_offsets.capacity() * sizeof(std::size_t);
+    for (const Row &row : m_rows)
+        m_bytes += row.samples.capacity() * sizeof(LineSample) + row.offsets.capacity() * sizeof(std::size_t);
     m_precomputed = true;
-}
-
-std::size_t LineCache::pairIndex(int a, int b) const noexcept
-{
-    if (a > b)
-        std::swap(a, b);
-    const auto n = static_cast<std::size_t>(m_layout.pinCount());
-    const auto i = static_cast<std::size_t>(a);
-    return i * n - i * (i + 1) / 2 + static_cast<std::size_t>(b - a - 1);
 }
 
 std::span<const LineSample> LineCache::line(int a, int b, std::vector<LineSample> &scratch) const
 {
     if (m_precomputed) {
-        const std::size_t index = pairIndex(a, b);
-        const std::size_t begin = m_offsets[index];
-        const std::size_t end = m_offsets[index + 1];
+        if (a > b)
+            std::swap(a, b);
+        const Row &row = m_rows[static_cast<std::size_t>(a)];
+        const std::size_t begin = row.offsets[static_cast<std::size_t>(b - a - 1)];
+        const std::size_t end = row.offsets[static_cast<std::size_t>(b - a)];
         if (end > begin)
-            return {m_samples.data() + begin, end - begin};
+            return {row.samples.data() + begin, end - begin};
         // Pairs below the cache's separation threshold were skipped; fall back.
     }
     rasterizePinLine(m_layout, a, b, m_width, m_imageWidth, m_imageHeight, scratch);
