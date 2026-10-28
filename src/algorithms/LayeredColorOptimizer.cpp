@@ -1,12 +1,12 @@
 #include "algorithms/LayeredColorOptimizer.h"
 
+#include "algorithms/CandidateSearch.h"
 #include "core/ColorRenderer.h"
 #include "core/Compositing.h"
 #include "core/LineCache.h"
 
 #include <QThread>
 #include <QThreadPool>
-#include <QtConcurrent/QtConcurrentMap>
 
 #include <algorithm>
 #include <chrono>
@@ -65,21 +65,6 @@ struct Layer
     std::vector<float> transmittance; // per pixel, 1 = no thread
     double lengthMm = 0.0;
     StopReason stopReason = StopReason::NoImprovement;
-};
-
-struct Candidate
-{
-    double delta = std::numeric_limits<double>::infinity();
-    int pin = -1;
-
-    [[nodiscard]] bool betterThan(const Candidate &other) const noexcept
-    {
-        if (pin < 0)
-            return false;
-        if (other.pin < 0)
-            return true;
-        return delta < other.delta || (delta == other.delta && pin < other.pin);
-    }
 };
 
 // Everything a layer build needs that does not change while it runs.
@@ -184,8 +169,7 @@ Layer buildLayer(const Shared &s, int colour, const LinearRgb &k, int budget, co
     if (!s.config.allowRepeatedLines)
         used.assign(static_cast<std::size_t>(pinCount) * static_cast<std::size_t>(pinCount - 1) / 2, false);
     std::vector<int> candidates;
-    std::vector<int> chunkIds;
-    std::vector<Candidate> chunkBest;
+    CandidateSearch search(s.pool, s.threads);
     std::vector<LineSample> applyScratch;
 
     int current = s.config.startPin;
@@ -207,32 +191,10 @@ Layer buildLayer(const Shared &s, int colour, const LinearRgb &k, int budget, co
             layer.stopReason = StopReason::NoValidCandidates;
             break;
         }
-        const int chunkCount = std::min<int>(static_cast<int>(candidates.size()), s.threads * 4);
-        const std::size_t chunkSize = (candidates.size() + chunkCount - 1) / chunkCount;
-        chunkIds.resize(static_cast<std::size_t>(chunkCount));
-        std::iota(chunkIds.begin(), chunkIds.end(), 0);
-        chunkBest.assign(static_cast<std::size_t>(chunkCount), Candidate{});
-        auto scoreChunk = [&](int chunk) {
+        const Candidate best = search.best(layout, current, candidates, s.config.threadWidth, [&](int pin) {
             thread_local std::vector<LineSample> scratch;
-            const std::size_t begin = static_cast<std::size_t>(chunk) * chunkSize;
-            const std::size_t end = std::min(candidates.size(), begin + chunkSize);
-            Candidate best;
-            for (std::size_t i = begin; i < end; ++i) {
-                const Candidate c{score(s.cache.line(current, candidates[i], scratch)), candidates[i]};
-                if (c.betterThan(best))
-                    best = c;
-            }
-            chunkBest[static_cast<std::size_t>(chunk)] = best;
-        };
-        if (s.threads > 1 && chunkCount > 1)
-            QtConcurrent::blockingMap(&s.pool, chunkIds, scoreChunk);
-        else
-            std::for_each(chunkIds.begin(), chunkIds.end(), scoreChunk);
-        Candidate best;
-        for (const Candidate &c : chunkBest) {
-            if (c.betterThan(best))
-                best = c;
-        }
+            return score(s.cache.line(current, pin, scratch));
+        });
         if (!(best.delta < -s.config.minImprovement)) {
             layer.stopReason = StopReason::NoImprovement;
             break;

@@ -1,11 +1,11 @@
 #include "algorithms/GreedyOptimizer.h"
 
+#include "algorithms/CandidateSearch.h"
 #include "core/Compositing.h"
 #include "core/LineCache.h"
 
 #include <QThread>
 #include <QThreadPool>
-#include <QtConcurrent/QtConcurrentMap>
 
 #include <algorithm>
 #include <chrono>
@@ -16,22 +16,6 @@
 namespace sa {
 
 namespace {
-
-struct Candidate
-{
-    double delta = std::numeric_limits<double>::infinity();
-    int pin = -1;
-
-    // Strict ordering with deterministic tie-breaking on the pin index.
-    [[nodiscard]] bool betterThan(const Candidate &other) const noexcept
-    {
-        if (pin < 0)
-            return false;
-        if (other.pin < 0)
-            return true;
-        return delta < other.delta || (delta == other.delta && pin < other.pin);
-    }
-};
 
 std::size_t pairIndex(int a, int b, int n) noexcept
 {
@@ -132,8 +116,7 @@ StringArtResult GreedyOptimizer::optimize(const OptimizationProblem &problem, co
 
     std::vector<int> candidates;
     candidates.reserve(static_cast<std::size_t>(pinCount));
-    std::vector<int> chunkIds;
-    std::vector<Candidate> chunkBest;
+    CandidateSearch search(pool, threads);
     std::vector<LineSample> applyScratch;
 
     int current = config.startPin;
@@ -157,37 +140,12 @@ StringArtResult GreedyOptimizer::optimize(const OptimizationProblem &problem, co
             break;
         }
 
-        // Score candidates in contiguous chunks; each chunk keeps its best.
-        const int chunkCount = std::min<int>(static_cast<int>(candidates.size()), threads * 4);
-        const std::size_t chunkSize = (candidates.size() + chunkCount - 1) / chunkCount;
-        chunkIds.resize(static_cast<std::size_t>(chunkCount));
-        std::iota(chunkIds.begin(), chunkIds.end(), 0);
-        chunkBest.assign(static_cast<std::size_t>(chunkCount), Candidate{});
-        auto scoreChunk = [&](int chunk) {
-            thread_local std::vector<LineSample> scratch;
-            const std::size_t begin = static_cast<std::size_t>(chunk) * chunkSize;
-            const std::size_t end = std::min(candidates.size(), begin + chunkSize);
-            Candidate best;
-            for (std::size_t k = begin; k < end; ++k) {
-                const int pin = candidates[k];
-                const Candidate c{scoreLine(cache.line(current, pin, scratch), transmittance, encoded, target,
-                                            weights, config.threadOpacity),
-                                  pin};
-                if (c.betterThan(best))
-                    best = c;
-            }
-            chunkBest[static_cast<std::size_t>(chunk)] = best;
-        };
-        if (threads > 1 && chunkCount > 1)
-            QtConcurrent::blockingMap(&pool, chunkIds, scoreChunk);
-        else
-            std::for_each(chunkIds.begin(), chunkIds.end(), scoreChunk);
-
-        Candidate best;
-        for (const Candidate &c : chunkBest) {
-            if (c.betterThan(best))
-                best = c;
-        }
+        const Candidate best =
+            search.best(layout, current, candidates, config.threadWidth, [&](int pin) {
+                thread_local std::vector<LineSample> scratch;
+                return scoreLine(cache.line(current, pin, scratch), transmittance, encoded, target, weights,
+                                 config.threadOpacity);
+            });
 
         if (!(best.delta < -config.minImprovement)) {
             result.stopReason = StopReason::NoImprovement;
