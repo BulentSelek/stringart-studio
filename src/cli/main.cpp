@@ -84,7 +84,7 @@ int main(int argc, char *argv[])
         {QStringLiteral("gamma"), QStringLiteral("Gamma (> 1 brightens)."), QStringLiteral("v"), QStringLiteral("1")},
         {QStringLiteral("invert"), QStringLiteral("Invert the input image.")},
         {QStringLiteral("repeat"), QStringLiteral("Allow repeated lines.")},
-        {QStringLiteral("threads"), QStringLiteral("Worker threads (0 = all cores, at most 16)."), QStringLiteral("n"), QStringLiteral("0")},
+        {QStringLiteral("threads"), QStringLiteral("Worker threads (0 = automatic)."), QStringLiteral("n"), QStringLiteral("0")},
         {QStringLiteral("png"), QStringLiteral("Output PNG path."), QStringLiteral("path")},
         {QStringLiteral("png-size"), QStringLiteral("Output PNG size in pixels."), QStringLiteral("px"), QStringLiteral("2048")},
         {QStringLiteral("csv"), QStringLiteral("Output CSV path."), QStringLiteral("path")},

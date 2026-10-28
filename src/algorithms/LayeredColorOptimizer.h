@@ -55,8 +55,9 @@ struct LayeredColorSettings
 //    the other layers leave free, and keeps the new layer only if the error
 //    drops, so the error never increases. The held-back share thus goes to
 //    the colours where it lowers the error most, rather than by area.
-// 4. Auto order builds and refines both light-to-dark and dark-to-light and
-//    keeps the better result.
+// 4. Auto order builds and refines both light-to-dark and dark-to-light,
+//    side by side with half of the threads each, and keeps the better
+//    result (ties: light-to-dark). Only the first reports progress.
 //
 // Steps are returned layer by layer (bottom first); ColorRenderer::renderRgb
 // of them reproduces the result.

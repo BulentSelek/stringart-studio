@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <future>
 #include <cmath>
 #include <limits>
 #include <numeric>
@@ -364,7 +365,8 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
     auto elapsed = [&start] {
         return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     };
-    const int threads = threadCount(config);
+    const int available = threadCount(config);
+    const int threads = searchThreads(config, available);
     QThreadPool pool;
     pool.setMaxThreadCount(threads);
     const LineCache cache(layout, config.threadWidth, problem.width, problem.height, config.minPinSeparation,
@@ -438,9 +440,11 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
     };
 
     // Builds and refines the layers in one order; returns them and the picture.
-    std::vector<float> scratchA;
-    std::vector<float> scratchB;
-    auto run = [&](const std::vector<int> &order, std::vector<float> &picture, double &error) {
+    // `live`: report progress (only one of several concurrent runs does).
+    auto run = [&](const std::vector<int> &order, const Shared &shared, bool live, std::vector<float> &picture,
+                   double &error) {
+        std::vector<float> scratchA;
+        std::vector<float> scratchB;
         std::vector<Layer> layers;
         for (int colour : order) {
             Layer layer;
@@ -465,7 +469,8 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
             const int budget = noLength ? 0 : flexible ? config.maxSegments - otherSegments : old.budget;
             Layer layer = buildLayer(shared, old.colour, old.k, budget, under, scratchA, scratchB, limit, out, stop,
                                      [&](int segments, double lengthMm, std::span<const float> rgb) {
-                                         report(otherSegments + segments, otherLength + lengthMm, rgb, false);
+                                         if (live)
+                                             report(otherSegments + segments, otherLength + lengthMm, rgb, false);
                                      });
             if (noLength)
                 layer.stopReason = StopReason::MaxThreadLength;
@@ -506,21 +511,43 @@ StringArtResult LayeredColorOptimizer::optimize(const OptimizationProblem &probl
     } else {
         orders.push_back(layerOrder(m_palette, m_settings.order));
     }
-    std::vector<Layer> bestLayers;
-    std::vector<float> bestPicture = empty;
-    double bestError = std::numeric_limits<double>::infinity();
-    for (const std::vector<int> &order : orders) {
-        if (stop.stop_requested() && !bestLayers.empty())
-            break;
-        std::vector<float> picture = empty;
-        double error = initialError;
-        std::vector<Layer> layers = run(order, picture, error);
-        if (error < bestError) {
-            bestError = error;
-            bestLayers = std::move(layers);
-            bestPicture = std::move(picture);
-        }
+    // Two orders run side by side, each with half of the available threads:
+    // one scoring loop stops scaling well before all cores are busy.
+    struct Outcome
+    {
+        std::vector<Layer> layers;
+        std::vector<float> picture;
+        double error = 0.0;
+    };
+    std::vector<Outcome> outcomes(orders.size());
+    auto runOrder = [&](std::size_t i, const Shared &context) {
+        outcomes[i].picture = empty;
+        outcomes[i].error = initialError;
+        outcomes[i].layers = run(orders[i], context, i == 0, outcomes[i].picture, outcomes[i].error);
+    };
+    if (orders.size() == 2 && available > 1) {
+        const int firstThreads = searchThreads(config, available - available / 2);
+        const int secondThreads = searchThreads(config, available / 2);
+        QThreadPool secondPool;
+        secondPool.setMaxThreadCount(secondThreads);
+        pool.setMaxThreadCount(firstThreads);
+        const Shared first{problem, config, m_target, cache, pool, firstThreads, pixels};
+        const Shared second{problem, config, m_target, cache, secondPool, secondThreads, pixels};
+        auto other = std::async(std::launch::async, [&] { runOrder(1, second); });
+        runOrder(0, first);
+        other.get();
+    } else {
+        for (std::size_t i = 0; i < orders.size(); ++i)
+            runOrder(i, shared);
     }
+    // Ties: the first order.
+    std::size_t bestIndex = 0;
+    for (std::size_t i = 1; i < outcomes.size(); ++i) {
+        if (outcomes[i].error < outcomes[bestIndex].error)
+            bestIndex = i;
+    }
+    std::vector<Layer> bestLayers = std::move(outcomes[bestIndex].layers);
+    std::vector<float> bestPicture = std::move(outcomes[bestIndex].picture);
 
     StringArtResult result;
     result.width = problem.width;

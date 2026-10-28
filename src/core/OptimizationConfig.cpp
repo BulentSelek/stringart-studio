@@ -30,9 +30,12 @@ void validateConfig(const OptimizationConfig &config, int pinCount)
 
 int threadCount(const OptimizationConfig &config)
 {
-    if (config.threadCount > 0)
-        return config.threadCount;
-    return std::clamp(QThread::idealThreadCount(), 1, kMaxAutoThreads);
+    return config.threadCount > 0 ? config.threadCount : std::max(1, QThread::idealThreadCount());
+}
+
+int searchThreads(const OptimizationConfig &config, int available)
+{
+    return config.threadCount > 0 ? available : std::clamp(available, 1, kMaxSearchThreads);
 }
 
 } // namespace sa

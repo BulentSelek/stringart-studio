@@ -65,7 +65,7 @@ StringArtResult GreedyOptimizer::optimize(const OptimizationProblem &problem, co
         return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     };
 
-    const int threads = threadCount(config);
+    const int threads = searchThreads(config, threadCount(config));
     QThreadPool pool;
     pool.setMaxThreadCount(threads);
 

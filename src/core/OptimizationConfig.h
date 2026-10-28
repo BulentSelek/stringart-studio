@@ -21,10 +21,14 @@ struct OptimizationConfig
 // Throws std::invalid_argument describing the first invalid field.
 void validateConfig(const OptimizationConfig &config, int pinCount);
 
-// Threads for candidate evaluation: config.threadCount, or for 0 all cores up
-// to kMaxAutoThreads. Scoring is memory-bound; beyond 16 threads runs were no
-// faster but used up to 3x the CPU time (docs/BENCHMARKS.md).
-inline constexpr int kMaxAutoThreads = 16;
+// Threads available to one optimization: config.threadCount, or all cores.
 [[nodiscard]] int threadCount(const OptimizationConfig &config);
+
+// Threads for one candidate-scoring loop out of `available`. Automatic mode
+// uses at most kMaxSearchThreads: scoring is memory-bound and more threads
+// were no faster but used up to 3x the CPU time (docs/BENCHMARKS.md); an
+// explicit thread count is used as given.
+inline constexpr int kMaxSearchThreads = 16;
+[[nodiscard]] int searchThreads(const OptimizationConfig &config, int available);
 
 } // namespace sa
