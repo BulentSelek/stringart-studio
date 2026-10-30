@@ -35,7 +35,8 @@ struct Candidate
 // Candidates are split into contiguous chunks of about kChunkSamples
 // estimated pixel samples (line length x (thread width + 2)), so short or few
 // lines are scored on the calling thread instead of paying for a parallel
-// dispatch, and long lines use at most 2 chunks per thread. The result does
+// dispatch, and long lines use at most 4 chunks per thread (many small chunks
+// balance cores of different speed). The result does
 // not depend on the chunking: each score is computed sequentially and ties go
 // to the lower pin.
 class CandidateSearch
